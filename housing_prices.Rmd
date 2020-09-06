@@ -1,6 +1,15 @@
 ---
 title: 'Data analytics for the Ames Housing Dataset'
-output: html_document
+output:
+  html_document:
+    code_folding: hide
+    css: style.css
+    number_sections: true
+    theme: yeti
+    toc: true
+    toc_depth: 2
+editor_options:
+  chunk_output_type: console
 ---
 
 ```{r setup, message=FALSE, include=FALSE}
@@ -18,16 +27,20 @@ library(tidyr)
 
 # Exploratory Data Analysis
 
-## Missing data
+## Missing data {.tabset}
 
-### Summary
+### Summary {.unnumbered}
 
-From the file *data_description.txt* provided with the data, NA is a valid value
-for certain categorical columns.  Preprocessing with the script *preprocess.R*
-replaced these NA values by the string 'null' so that they would not be treated
-as missing values.
+'NA' was replaced by 'null' in cases where it represented a valid value.
 
-### Data
+  - From the variable descriptions provided in *data_description.txt*, NA is
+  a valid value for certain categorical columns. Preprocessing with the
+  script *preprocess.R* replaced these NA values by the string 'null' so that
+  they would not be treated as missing values.
+
+### Data {.data-display .unnumbered}
+
+<div style = "width:80%; height:auto; margin: auto;">
 
 ```{r}
 source('descriptions.R')
@@ -56,3 +69,12 @@ combined_na_counts <- data.frame(
 )
 datatable(combined_na_counts)
 ```
+
+</div>
+
+## Variable distributions {.tabset}
+
+### Summary {.unnumbered}
+
+Display a bar chart for each categorical variable.
+Also include the description from 'data_description.txt' for each variable.
