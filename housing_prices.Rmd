@@ -1,0 +1,58 @@
+---
+title: 'Data analytics for the Ames Housing Dataset'
+output: html_document
+---
+
+```{r setup, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    fig.align = 'center',
+    comment = NA
+)
+
+library(dplyr)
+library(DT)
+library(ggplot2)
+library(tidyr)
+```
+
+# Exploratory Data Analysis
+
+## Missing data
+
+### Summary
+
+From the file *data_description.txt* provided with the data, NA is a valid value
+for certain categorical columns.  Preprocessing with the script *preprocess.R*
+replaced these NA values by the string 'null' so that they would not be treated
+as missing values.
+
+### Data
+
+```{r}
+source('descriptions.R')
+read_data <- function(file) {
+    data <- read.csv(file, stringsAsFactors = F,
+                     colClasses = c(MSSubClass = 'character'))
+    return(data)
+}
+train_data <- read_data('data/train.csv')
+test_data <- read_data('data/test.csv')
+get_na_counts <- function(data) {
+    na_counts <- data.frame(name = colnames(data),
+                            count = colSums(is.na(data)),
+                            stringsAsFactors = F) %>%
+        arrange(desc(count))
+    return(na_counts)
+}
+
+na_counts_train <- get_na_counts(train_data)
+na_counts_test <- get_na_counts(test_data)
+combined_na_counts <- data.frame(
+    Var.Name.Train = head(na_counts_train[['name']], 20),
+    Missing.Count.Train = head(na_counts_train[['count']], 20),
+    Var.Name.Test = head(na_counts_test[['name']], 20),
+    Missing.Count.Test = head(na_counts_test[['count']], 20)
+)
+datatable(combined_na_counts)
+```
