@@ -1,0 +1,15 @@
+*.code-workspace
+*.csv
+*.html
+*.sqlite
+.idea
+.ipynb_checkpoints
+.Rhistory
+.vscode
+__pycache__
+data
+markdown_output
+rsconnect
+scratch
+www
+run_lintr.R
