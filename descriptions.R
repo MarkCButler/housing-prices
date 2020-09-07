@@ -295,7 +295,8 @@ variable_descriptions <- list(
     BsmtExposure = 'BsmtExposure: Refers to walkout or garden level walls
 
        Gd	Good Exposure
-       Av	Average Exposure (split levels or foyers typically score average or above)
+       Av	Average Exposure (split levels or foyers typically score average
+            or above)
        Mn	Mimimum Exposure
        No	No Exposure
        null	No Basement',
@@ -380,7 +381,8 @@ variable_descriptions <- list(
 
        Ex	Excellent - Exceptional Masonry Fireplace
        Gd	Good - Masonry Fireplace in main level
-       TA	Average - Prefabricated Fireplace in main living area or Masonry Fireplace in basement
+       TA	Average - Prefabricated Fireplace in main living area
+            or Masonry Fireplace in basement
        Fa	Fair - Prefabricated Fireplace in basement
        Po	Poor - Ben Franklin Stove
        null	No Fireplace',
@@ -471,9 +473,11 @@ variable_descriptions <- list(
        Normal	Normal Sale
        Abnorml	Abnormal Sale -  trade, foreclosure, short sale
        AdjLand	Adjoining Land Purchase
-       Alloca	Allocation - two linked properties with separate deeds, typically condo with a garage unit
+       Alloca	Allocation - two linked properties with separate deeds,
+                typically condo with a garage unit
        Family	Sale between family members
-       Partial	Home was not completed when last assessed (associated with New Homes)',
+       Partial	Home was not completed when last assessed
+                (associated with New Homes)',
     # Include a description of the sales price in order to simplify plot generation.
     SalesPrice = 'Sales Price'
 )

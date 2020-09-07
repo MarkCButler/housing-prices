@@ -55,12 +55,12 @@ a {
 }
 
 .nav-tabs > li.active > a, .nav-tabs > li.active > a:hover, .nav-tabs > li.active > a:focus {
-	background-color: #dcdcdc;
+	background-color: Gainsboro;
 }
 
-/* Class data-display is indicated in the R markdown file as {.data-display} */
-.data-display {
-    background-color: #dcdcdc;
+/* Class tab-display is indicated in the R markdown file as {.tab-display} */
+.tab-display {
+    background-color: Gainsboro;
 }
 
 /*************************************************************

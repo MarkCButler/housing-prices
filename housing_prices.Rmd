@@ -47,7 +47,7 @@ variables
   - MasVnrType: Masonry veneer type
   - MasVnrArea: Masonry veneer area in square feet
 
-### Data {.data-display .unnumbered}
+### Data {.tab-display .unnumbered}
 
 <div style = "width:80%; height:auto; margin: auto;">
 
@@ -90,5 +90,99 @@ datatable(combined_na_counts, rownames = F,
 
 ### Summary {.unnumbered}
 
-Display a bar chart for each categorical variable.
-Also include the description from 'data_description.txt' for each variable.
+The tabs show the distribution of each variable, in order to give a feel for the
+variables.
+
+  - Bar charts are used for categorical variables.
+  - Histograms are used for numerical variables.
+  - The variable descriptions from *data_description.txt* are included with the plots.
+
+### Categorical variables {.tab-display .unnumbered}
+
+<div style = "width:80%; height:auto; margin: auto;">
+
+```{r}
+# Helper function that finds the total number of characters needed for the
+# labels on the horizontal axis.  If this number is too large, the labels will
+# be rotated.
+nchar_labels <- function(char_vector) {
+    char_vector <- char_vector[!is.na(char_vector)]
+    label_lengths <- nchar(unique(char_vector))
+    return(sum(label_lengths))
+}
+
+categorical_data <- select(train_data, where(is.character))
+categorical_columns <- colnames(categorical_data)
+# The list variable_descriptions is defined in 'descriptions.R'
+categorical_descriptions <- variable_descriptions[categorical_columns]
+
+for (variable in categorical_columns) {
+    description <- categorical_descriptions[[variable]]
+    to_plot <- select(categorical_data, all_of(variable)) %>%
+        drop_na()
+
+    fig <- ggplot(to_plot, aes_string(x = variable)) +
+        geom_bar(fill = 'navyblue') +
+        ggtitle(variable)
+
+    if (nchar_labels(to_plot[[variable]]) > 60) {
+        fig <- fig + theme(
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        )
+    }
+
+    print(fig)
+    cat(description)
+}
+```
+
+</div>
+
+### Numerical variables {.tab-display .unnumbered}
+
+<div style = "width:80%; height:auto; margin: auto;">
+
+```{r}
+# Variables containins a small set of integers as values.  These get special
+# treatment for bin selection.
+small_sets <- c('OverallQual', 'OverallCond', 'MoSold', 'YrSold',
+                'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath',
+                'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd', 'Fireplaces',
+                'GarageCars')
+
+numeric_data <- select(train_data, -all_of(categorical_columns), -Id)
+numeric_columns <- colnames(numeric_data)
+numeric_descriptions <- variable_descriptions[numeric_columns]
+
+for (variable in numeric_columns) {
+    description <- variable_descriptions[[variable]]
+    to_plot <- select(numeric_data, all_of(variable)) %>%
+        drop_na()
+
+    fig <- ggplot(to_plot, aes_string(x = variable)) +
+        ggtitle(variable)
+
+    if (variable %in% small_sets) {
+        # Select a bin for each value if we only have a few values.
+        values <- to_plot[[variable]]
+        max_value <- max(values, na.rm = T)
+        min_value <- min(values, na.rm = T) - 1
+        if (min_value < 5) (
+            min_value <- 0
+        )
+        label_breaks <- min_value:max_value
+        bin_breaks <- 0.5 + label_breaks
+        fig <- fig +
+            geom_histogram(fill = 'navyblue', breaks = bin_breaks) +
+            scale_x_continuous(breaks = label_breaks)
+    } else {
+        # Otherwise use the default number of bins.
+        fig <- fig + geom_histogram(fill = 'navyblue', bins = 30)
+    }
+
+    print(fig)
+    cat(description)
+}
+```
+
+</div>
