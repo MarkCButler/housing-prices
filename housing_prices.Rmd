@@ -4,6 +4,7 @@ output:
   html_document:
     code_folding: hide
     css: style.css
+    highlight: tango
     number_sections: true
     theme: yeti
     toc: true
@@ -38,6 +39,14 @@ library(tidyr)
   script *preprocess.R* replaced these NA values by the string 'null' so that
   they would not be treated as missing values.
 
+After this preprocessing, missing values are concentrated in only four
+variables
+
+  - LotFrontage: Linear feet of street connected to property
+  - GarageYrBlt: Year garage was built
+  - MasVnrType: Masonry veneer type
+  - MasVnrArea: Masonry veneer area in square feet
+
 ### Data {.data-display .unnumbered}
 
 <div style = "width:80%; height:auto; margin: auto;">
@@ -51,23 +60,28 @@ read_data <- function(file) {
 }
 train_data <- read_data('data/train.csv')
 test_data <- read_data('data/test.csv')
-get_na_counts <- function(data) {
+get_na_counts <- function(data, dataset_name) {
     na_counts <- data.frame(name = colnames(data),
                             count = colSums(is.na(data)),
+                            dataset = dataset_name,
                             stringsAsFactors = F) %>%
-        arrange(desc(count))
+        arrange(desc(count)) %>%
+        filter(count != 0)
     return(na_counts)
 }
 
-na_counts_train <- get_na_counts(train_data)
-na_counts_test <- get_na_counts(test_data)
-combined_na_counts <- data.frame(
-    Var.Name.Train = head(na_counts_train[['name']], 20),
-    Missing.Count.Train = head(na_counts_train[['count']], 20),
-    Var.Name.Test = head(na_counts_test[['name']], 20),
-    Missing.Count.Test = head(na_counts_test[['count']], 20)
-)
-datatable(combined_na_counts)
+na_counts_train <- get_na_counts(train_data, 'train')
+na_counts_test <- get_na_counts(test_data, 'test')
+combined_na_counts <- rbind(na_counts_test, na_counts_train,
+                            make.row.names = F) %>%
+    arrange(desc(count), desc(dataset), name) %>%
+    rename(`missing value count` = count)
+
+# Define option for column alignment to be passed to DT::datatable.
+table_alignment <- list(className = 'dt-center', targets = '_all')
+datatable(combined_na_counts, rownames = F,
+          options = list(columnDefs = list(table_alignment)
+))
 ```
 
 </div>
