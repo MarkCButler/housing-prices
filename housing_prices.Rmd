@@ -23,6 +23,7 @@ knitr::opts_chunk$set(
 library(dplyr)
 library(DT)
 library(ggplot2)
+library(scales)
 library(tidyr)
 ```
 
@@ -97,7 +98,30 @@ variables.
   - Histograms are used for numerical variables.
   - The variable descriptions from *data_description.txt* are included with the plots.
 
-### Categorical variables {.tab-display .unnumbered}
+The target variable (SalePrice) is skewed right.
+
+A number of the predictor variables are concentrated into a single value or a
+small range of values.  Examples:
+
+  - Most houses have all public utilities.
+  - Most house have no pool area.
+
+### Target {.tab-display .unnumbered}
+
+<div style = "width:80%; height:auto; margin: auto;">
+
+```{r}
+variable <- 'SalePrice'
+to_plot <- select(train_data, all_of(variable))
+fig <- ggplot(to_plot, aes_string(x = variable)) +
+    geom_histogram(fill = 'navyblue', bins = 30) +
+    scale_x_continuous(name = 'Price', labels = label_dollar()) +
+    ggtitle(variable)
+print(fig)
+```
+
+</div>
+### Categorical predictors {.tab-display .unnumbered}
 
 <div style = "width:80%; height:auto; margin: auto;">
 
@@ -111,14 +135,14 @@ nchar_labels <- function(char_vector) {
     return(sum(label_lengths))
 }
 
-categorical_data <- select(train_data, where(is.character))
-categorical_columns <- colnames(categorical_data)
-# The list variable_descriptions is defined in 'descriptions.R'
-categorical_descriptions <- variable_descriptions[categorical_columns]
+categorical_columns <- colnames(
+    select(train_data, where(is.character))
+)
 
 for (variable in categorical_columns) {
-    description <- categorical_descriptions[[variable]]
-    to_plot <- select(categorical_data, all_of(variable)) %>%
+    # The list variable_descriptions is defined in 'descriptions.R'
+    description <- variable_descriptions[[variable]]
+    to_plot <- select(train_data, all_of(variable)) %>%
         drop_na()
 
     fig <- ggplot(to_plot, aes_string(x = variable)) +
@@ -138,7 +162,7 @@ for (variable in categorical_columns) {
 
 </div>
 
-### Numerical variables {.tab-display .unnumbered}
+### Numerical predictors {.tab-display .unnumbered}
 
 <div style = "width:80%; height:auto; margin: auto;">
 
@@ -150,13 +174,14 @@ small_sets <- c('OverallQual', 'OverallCond', 'MoSold', 'YrSold',
                 'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd', 'Fireplaces',
                 'GarageCars')
 
-numeric_data <- select(train_data, -all_of(categorical_columns), -Id)
-numeric_columns <- colnames(numeric_data)
-numeric_descriptions <- variable_descriptions[numeric_columns]
+numeric_columns <- setdiff(
+    colnames(train_data),
+    c(categorical_columns, 'Id', 'SalePrice')
+)
 
 for (variable in numeric_columns) {
     description <- variable_descriptions[[variable]]
-    to_plot <- select(numeric_data, all_of(variable)) %>%
+    to_plot <- select(train_data, all_of(variable)) %>%
         drop_na()
 
     fig <- ggplot(to_plot, aes_string(x = variable)) +
@@ -186,3 +211,7 @@ for (variable in numeric_columns) {
 ```
 
 </div>
+
+## Variable associations {.tabset}
+
+### Summary {.unnumbered}
