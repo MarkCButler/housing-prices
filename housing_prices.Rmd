@@ -13,6 +13,13 @@ editor_options:
   chunk_output_type: console
 ---
 
+```{js, echo = FALSE}
+// Add the Kaggle competition banner to the top of the page.
+let banner_html =  '<img id="banner" src="images/housesbanner.png" alt="Banner">';
+header = document.getElementById('header');
+header.innerHTML = banner_html + header.innerHTML;
+```
+
 ```{r setup, message=FALSE, include=FALSE}
 knitr::opts_chunk$set(
     echo = TRUE,
@@ -50,7 +57,7 @@ variables
 
 ### Data {.tab-display .unnumbered}
 
-<div style = "width:80%; height:auto; margin: auto;">
+<div class="code-block">
 
 ```{r}
 source('descriptions.R')
@@ -94,7 +101,7 @@ datatable(combined_na_counts, rownames = F,
 The tabs show the distribution of each variable, in order to give a feel for the
 variables.
 
-  - Bar charts are used for categorical variables.
+  - Bar charts are used for categorical (nominal) variables.
   - Histograms are used for numerical variables.
   - The variable descriptions from *data_description.txt* are included with the plots.
 
@@ -108,22 +115,21 @@ small range of values.  Examples:
 
 ### Target {.tab-display .unnumbered}
 
-<div style = "width:80%; height:auto; margin: auto;">
+<div class="code-block">
 
 ```{r}
-variable <- 'SalePrice'
-to_plot <- select(train_data, all_of(variable))
-fig <- ggplot(to_plot, aes_string(x = variable)) +
+to_plot <- select(train_data, SalePrice)
+fig <- ggplot(to_plot, aes(x = SalePrice)) +
     geom_histogram(fill = 'navyblue', bins = 30) +
     scale_x_continuous(name = 'Price', labels = label_dollar()) +
-    ggtitle(variable)
+    ggtitle('SalePrice')
 print(fig)
 ```
 
 </div>
 ### Categorical predictors {.tab-display .unnumbered}
 
-<div style = "width:80%; height:auto; margin: auto;">
+<div class="code-block">
 
 ```{r}
 # Helper function that finds the total number of characters needed for the
@@ -135,21 +141,21 @@ nchar_labels <- function(char_vector) {
     return(sum(label_lengths))
 }
 
-categorical_columns <- colnames(
+nominal_predictors <- colnames(
     select(train_data, where(is.character))
 )
 
-for (variable in categorical_columns) {
+for (variable_name in nominal_predictors) {
     # The list variable_descriptions is defined in 'descriptions.R'
-    description <- variable_descriptions[[variable]]
-    to_plot <- select(train_data, all_of(variable)) %>%
+    description <- variable_descriptions[[variable_name]]
+    to_plot <- select(train_data, all_of(variable_name)) %>%
         drop_na()
 
-    fig <- ggplot(to_plot, aes_string(x = variable)) +
+    fig <- ggplot(to_plot, aes_string(x = variable_name)) +
         geom_bar(fill = 'navyblue') +
-        ggtitle(variable)
+        ggtitle(variable_name)
 
-    if (nchar_labels(to_plot[[variable]]) > 60) {
+    if (nchar_labels(to_plot[[variable_name]]) > 60) {
         fig <- fig + theme(
             axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
         )
@@ -164,37 +170,38 @@ for (variable in categorical_columns) {
 
 ### Numerical predictors {.tab-display .unnumbered}
 
-<div style = "width:80%; height:auto; margin: auto;">
+<div class="code-block">
 
 ```{r}
-# Variables containins a small set of integers as values.  These get special
-# treatment for bin selection.
-small_sets <- c('OverallQual', 'OverallCond', 'MoSold', 'YrSold',
-                'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath',
-                'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd', 'Fireplaces',
-                'GarageCars')
+# In the later analysis, the numeric variables with only a few values are
+# treated as discrete, while than those containing many variables are treated as
+# continuous.  In the current code block, bin selection for the two types of
+# numeric variables is done differently
 
-numeric_columns <- setdiff(
+discrete_numeric <- c('OverallQual', 'OverallCond', 'BsmtFullBath',
+                      'BsmtHalfBath', 'FullBath', 'HalfBath',
+                      'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd',
+                      'Fireplaces', 'GarageCars', 'MoSold',
+                      'YrSold')
+
+numeric_predictors <- setdiff(
     colnames(train_data),
-    c(categorical_columns, 'Id', 'SalePrice')
+    c(nominal_predictors, 'Id', 'SalePrice')
 )
 
-for (variable in numeric_columns) {
-    description <- variable_descriptions[[variable]]
-    to_plot <- select(train_data, all_of(variable)) %>%
+for (variable_name in numeric_predictors) {
+    description <- variable_descriptions[[variable_name]]
+    to_plot <- select(train_data, all_of(variable_name)) %>%
         drop_na()
 
-    fig <- ggplot(to_plot, aes_string(x = variable)) +
-        ggtitle(variable)
+    fig <- ggplot(to_plot, aes_string(x = variable_name)) +
+        ggtitle(variable_name)
 
-    if (variable %in% small_sets) {
+    if (variable_name %in% discrete_numeric) {
         # Select a bin for each value if we only have a few values.
-        values <- to_plot[[variable]]
+        values <- to_plot[[variable_name]]
         max_value <- max(values, na.rm = T)
         min_value <- min(values, na.rm = T) - 1
-        if (min_value < 5) (
-            min_value <- 0
-        )
         label_breaks <- min_value:max_value
         bin_breaks <- 0.5 + label_breaks
         fig <- fig +
@@ -212,6 +219,78 @@ for (variable in numeric_columns) {
 
 </div>
 
-## Variable associations {.tabset}
+## Variable associations
 
-### Summary {.unnumbered}
+### Which predictors can explain the variance in the target? {.tabset}
+
+#### Summary {.unnumbered}
+
+ANOVA ($\eta^2$) used for categorical predictors.
+
+  - Numerical predictors with only a few values treated as categorical.
+
+$R^2$ used for continuous numerical predictors.
+
+  - Numerical predictors with many values treated as continuous.
+
+#### Categorical predictors {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r}
+categorical_predictors <- c(nominal_predictors, discrete_numeric)
+sale_price <- train_data[['SalePrice']]
+find_explained_variance <- function(variable_name, is_categorical) {
+    variable <- train_data[[variable_name]]
+    if (is_categorical) {
+        variable <- as.factor(variable)
+    }
+    # For categorical variables, calculate eta squared, while for
+    # continuous variable, calculate R squared.  Within R, these can both be
+    # obtained from the lm model by executing the summary command and then
+    # extracting the element r.squared.
+    #
+    # Explanation:  The command aov used for ANOVA in R is a wrapper to lm that
+    # provides a summary in the traditional form for analysis of variance.  This
+    # summary doesn't include eta squared.  However, the value is available as
+    # r.squared from the summary for lm.  So if aov is used to generate the
+    # model, then eta squared is available as summary.lm(model)$r.squared.
+    model <- lm(sale_price ~ variable)
+    return(summary(model)$r.squared)
+}
+eta_squared <- sapply(categorical_predictors, find_explained_variance,
+                      is_categorical = T)
+eta_squared_df <- data.frame(name = categorical_predictors,
+                             eta.squared = eta_squared) %>%
+    arrange(desc(eta.squared)) %>%
+    rename(`eta squared` = eta.squared)
+datatable(eta_squared_df, rownames = F,
+          options = list(
+              columnDefs = list(table_alignment),
+              digits = 3
+          )) %>%
+    formatRound(columns = 'eta squared', digits = 3)
+```
+
+</div>
+
+#### Continuous predictors  {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r}
+continuous_predictors <- setdiff(numeric_predictors, categorical_predictors)
+r_squared <- sapply(continuous_predictors, find_explained_variance,
+                    is_categorical = F)
+r_squared_df <- data.frame(name = continuous_predictors,
+                           r.squared = r_squared) %>%
+    arrange(desc(r.squared)) %>%
+    rename(`R squared` = r.squared)
+datatable(r_squared_df, rownames = F,
+          options = list(
+              columnDefs = list(table_alignment),
+              digits = 3
+          )) %>%
+    formatRound(columns = 'R squared', digits = 3)
+```
+
