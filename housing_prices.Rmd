@@ -30,6 +30,7 @@ knitr::opts_chunk$set(
 library(dplyr)
 library(DT)
 library(ggplot2)
+library(latex2exp)
 library(scales)
 library(tidyr)
 ```
@@ -62,8 +63,7 @@ variables
 ```{r}
 source('descriptions.R')
 read_data <- function(file) {
-    data <- read.csv(file, stringsAsFactors = F,
-                     colClasses = c(MSSubClass = 'character'))
+    data <- read.csv(file, stringsAsFactors = F)
     return(data)
 }
 train_data <- read_data('data/train.csv')
@@ -135,14 +135,36 @@ print(fig)
 # Helper function that finds the total number of characters needed for the
 # labels on the horizontal axis.  If this number is too large, the labels will
 # be rotated.
-nchar_labels <- function(char_vector) {
-    char_vector <- char_vector[!is.na(char_vector)]
+#
+# The input argument is a either a character vector or a factor.
+nchar_labels <- function(vector_to_plot) {
+    # Drop NA.
+    vector_to_plot <- vector_to_plot[!is.na(vector_to_plot)]
+    # If necessary, convert to character.
+    char_vector <- as.character(vector_to_plot)
     label_lengths <- nchar(unique(char_vector))
     return(sum(label_lengths))
 }
 
+# Helper function that rotates the labels of the horizontal axis if necessary.
+set_label_angle <- function(fig, vector_to_plot) {
+    if (nchar_labels(vector_to_plot) > 60) {
+        fig <- fig + theme(
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        )
+    }
+    return(fig)
+}
+
+# The column MSSubClass, which represents a category labeled with integer
+# values, requires special handling because it is read from the .csv file as an
+# integer.  Converting from an integer vector to a factor for plotting gives an
+# ordering of levels that matches integer ordering, whereas if the column is
+# converted from a character vector to a factor, the lexical order has levels
+# such as '120', '130', etc before '20', '30', etc.
+train_data <- mutate(train_data, MSSubClass = as.factor(MSSubClass))
 nominal_predictors <- colnames(
-    select(train_data, where(is.character))
+    select(train_data, MSSubClass, where(is.character))
 )
 
 for (variable_name in nominal_predictors) {
@@ -154,12 +176,7 @@ for (variable_name in nominal_predictors) {
     fig <- ggplot(to_plot, aes_string(x = variable_name)) +
         geom_bar(fill = 'navyblue') +
         ggtitle(variable_name)
-
-    if (nchar_labels(to_plot[[variable_name]]) > 60) {
-        fig <- fig + theme(
-            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
-        )
-    }
+    fig <- set_label_angle(fig, to_plot[[variable_name]])
 
     print(fig)
     cat(description)
@@ -221,7 +238,7 @@ for (variable_name in numeric_predictors) {
 
 ## Variable associations
 
-### Which predictors can explain the variance in the target? {.tabset}
+### Which predictors can explain the variance in the sale price? {.tabset}
 
 #### Summary {.unnumbered}
 
@@ -240,11 +257,8 @@ $R^2$ used for continuous numerical predictors.
 ```{r}
 categorical_predictors <- c(nominal_predictors, discrete_numeric)
 sale_price <- train_data[['SalePrice']]
-find_explained_variance <- function(variable_name, is_categorical) {
+find_explained_variance <- function(variable_name) {
     variable <- train_data[[variable_name]]
-    if (is_categorical) {
-        variable <- as.factor(variable)
-    }
     # For categorical variables, calculate eta squared, while for
     # continuous variable, calculate R squared.  Within R, these can both be
     # obtained from the lm model by executing the summary command and then
@@ -258,10 +272,9 @@ find_explained_variance <- function(variable_name, is_categorical) {
     model <- lm(sale_price ~ variable)
     return(summary(model)$r.squared)
 }
-eta_squared <- sapply(categorical_predictors, find_explained_variance,
-                      is_categorical = T)
-eta_squared_df <- data.frame(name = categorical_predictors,
-                             eta.squared = eta_squared) %>%
+eta_squared <- sapply(categorical_predictors, find_explained_variance)
+eta_squared_df <- data.frame(name = categorical_predictors, eta.squared = eta_squared,
+                             stringsAsFactors = F) %>%
     arrange(desc(eta.squared)) %>%
     rename(`eta squared` = eta.squared)
 datatable(eta_squared_df, rownames = F,
@@ -280,10 +293,8 @@ datatable(eta_squared_df, rownames = F,
 
 ```{r}
 continuous_predictors <- setdiff(numeric_predictors, categorical_predictors)
-r_squared <- sapply(continuous_predictors, find_explained_variance,
-                    is_categorical = F)
-r_squared_df <- data.frame(name = continuous_predictors,
-                           r.squared = r_squared) %>%
+r_squared <- sapply(continuous_predictors, find_explained_variance)
+r_squared_df <- data.frame(name = continuous_predictors, r.squared = r_squared) %>%
     arrange(desc(r.squared)) %>%
     rename(`R squared` = r.squared)
 datatable(r_squared_df, rownames = F,
@@ -294,3 +305,95 @@ datatable(r_squared_df, rownames = F,
     formatRound(columns = 'R squared', digits = 3)
 ```
 
+</div>
+
+### Plots of sale price vs individual predictors {.tabset}
+
+#### Summary {.unnumbered}
+
+Predictors with $\eta^2,\, R^2 \geq 0.1$ were plotted against sale price.
+
+  - Box plots used for categorical predictors.
+  - Scatter plots used for continuous predictors.
+
+#### Box plots {.tab-display}
+
+<div class="code-block">
+
+```{r}
+high_eta_squared_df <- filter(eta_squared_df, `eta squared` >= 0.1)
+high_eta_squared <- high_eta_squared_df[['eta squared']]
+names(high_eta_squared) <- high_eta_squared_df[['name']]
+for (variable_name in names(high_eta_squared)) {
+    eta_squared <- round(high_eta_squared[variable_name], digits = 3)
+    description <- variable_descriptions[[variable_name]]
+    to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
+        drop_na() %>%
+        mutate(SalePrice = SalePrice / 1000)
+    to_plot[[variable_name]] <- as.factor(to_plot[[variable_name]])
+
+    # Box plot
+    plot_title <- paste0(variable_name, ', ', '$\\eta^2 = ', eta_squared, '$')
+    fig <- ggplot(to_plot,
+                  aes(x = reorder(.data[[variable_name]], SalePrice, median),
+                      y = SalePrice)) +
+        geom_boxplot(aes(fill = reorder(.data[[variable_name]], SalePrice, median))) +
+        scale_y_continuous(labels = label_dollar(suffix = 'k')) +
+        scale_fill_discrete(name = variable_name) +
+        ggtitle(TeX(plot_title))
+    fig <- set_label_angle(fig, to_plot[[variable_name]])
+
+    print(fig)
+
+    # Bar chart of the distribution
+    plot_title <- paste(variable_name, 'distribution')
+    fig <- ggplot(to_plot,
+                  aes(x = reorder(.data[[variable_name]], SalePrice, median))) +
+        geom_bar(fill = 'navyblue') +
+        scale_x_discrete(name = variable_name) +
+        ggtitle(plot_title)
+    fig <- set_label_angle(fig, to_plot[[variable_name]])
+    print(fig)
+
+    cat(description)
+}
+```
+
+</div>
+
+#### Scatter plots {.tab-display}
+
+<div class="code-block">
+
+```{r}
+high_r_squared_df <- filter(r_squared_df, `R squared` >= 0.1)
+high_r_squared <- high_r_squared_df[['R squared']]
+names(high_r_squared) <- high_r_squared_df[['name']]
+for (variable_name in names(high_r_squared)) {
+    r_squared <- round(high_r_squared[variable_name], digits = 3)
+    description <- variable_descriptions[[variable_name]]
+    to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
+        drop_na() %>%
+        mutate(SalePrice = SalePrice / 1000)
+
+    # Scatter plot
+    plot_title <- paste0(variable_name, ', ', '$R^2 = ', r_squared, '$')
+    fig <- ggplot(to_plot, aes_string(x = variable_name, y = 'SalePrice')) +
+        geom_point(color = 'navyblue') +
+        scale_y_continuous(labels = label_dollar(suffix = 'k')) +
+        ggtitle(TeX(plot_title))
+
+    print(fig)
+
+    # Histogram of the distribution
+    plot_title <- paste(variable_name, 'distribution')
+    fig <- ggplot(to_plot, aes_string(x = variable_name)) +
+        geom_histogram(fill = 'navyblue', bins = 30) +
+        ggtitle(plot_title)
+    print(fig)
+
+    cat(description)
+}
+```
+
+</div>
