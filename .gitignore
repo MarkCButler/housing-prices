@@ -2,14 +2,17 @@
 *.csv
 *.html
 *.sqlite
+.history
 .idea
 .ipynb_checkpoints
+.lintr
 .Rhistory
 .vscode
 __pycache__
-data
-markdown_output
-rsconnect
-scratch
-www
-run_lintr.R
+# The next two entries are for the knitr cache.
+*_cache/
+*_files/
+data/
+images/
+markdown_output/
+scratch/
