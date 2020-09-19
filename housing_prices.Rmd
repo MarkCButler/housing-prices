@@ -15,7 +15,7 @@ editor_options:
 
 ```{js, echo = FALSE}
 // Add the Kaggle competition banner to the top of the page.
-let banner_html =  '<img id="banner" src="images/housesbanner.png" alt="Banner">';
+let banner_html = '<img id="banner" src="images/housesbanner.png" alt="Banner">';
 header = document.getElementById('header');
 header.innerHTML = banner_html + header.innerHTML;
 ```
@@ -35,32 +35,40 @@ library(scales)
 library(tidyr)
 ```
 
-# Exploratory Data Analysis
+# Exploratory data analysis
+
+Variable transformation was done in an iterative process during exploratory data
+analysis.
+
+  - Individual predictor variables that could explain variance in the target
+    were plotted against the target.
+  - Different transformations were applied to try to enhance simple linear
+    associations, and new plots were generated.
+
+Outcome: the target (SalePrice) and one predictor (GrLivArea: Above ground
+living area) were both transformed by taking the logarithm.
+
 
 ## Missing data {.tabset}
 
 ### Summary {.unnumbered}
 
-'NA' was replaced by 'null' in cases where it represented a valid value.
+'NA' was replaced by a string such as 'NB' for 'No Basement' in cases where it
+represented a valid category.
 
-  - From the variable descriptions provided in *data_description.txt*, NA is
-  a valid value for certain categorical columns. Preprocessing with the
-  script *preprocess.R* replaced these NA values by the string 'null' so that
-  they would not be treated as missing values.
+  - From the variable descriptions provided in *data_description.txt*, NA is a
+    valid category for certain columns. Preprocessing with the script
+    *preprocess.R* replaced these NA strings so that they would not be treated
+    as missing values.
 
-After this preprocessing, missing values are concentrated in only four
-variables
+After this preprocessing, missing values were concentrated in only a few
+variables.
 
-  - LotFrontage: Linear feet of street connected to property
-  - GarageYrBlt: Year garage was built
-  - MasVnrType: Masonry veneer type
-  - MasVnrArea: Masonry veneer area in square feet
-
-### Data {.tab-display .unnumbered}
+### Missing value counts {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
+```{r, missing-data}
 source('descriptions.R')
 read_data <- function(file) {
     data <- read.csv(file, stringsAsFactors = F)
@@ -85,11 +93,18 @@ combined_na_counts <- rbind(na_counts_test, na_counts_train,
     arrange(desc(count), desc(dataset), name) %>%
     rename(`missing value count` = count)
 
-# Define option for column alignment to be passed to DT::datatable.
-table_alignment <- list(className = 'dt-center', targets = '_all')
-datatable(combined_na_counts, rownames = F,
-          options = list(columnDefs = list(table_alignment)
-))
+# The same (complicated) set of options can be used with DT::datatable
+# throughout this file.  A function wrapper is defined for this.
+get_datatable <- function(data) {
+    table_alignment <- list(className = 'dt-center', targets = '_all')
+    table_with_options <- datatable(
+        data,
+        rownames = F,
+        options = list(columnDefs = list(table_alignment), digits = 3)
+    )
+    return(table_with_options)
+}
+get_datatable(combined_na_counts)
 ```
 
 </div>
@@ -98,31 +113,44 @@ datatable(combined_na_counts, rownames = F,
 
 ### Summary {.unnumbered}
 
-The tabs show the distribution of each variable, in order to give a feel for the
-variables.
+The tabs show the distribution of each variable.
 
-  - Bar charts are used for categorical (nominal) variables.
-  - Histograms are used for numerical variables.
-  - The variable descriptions from *data_description.txt* are included with the plots.
+  - Numerical predictors with only a few values are treated as categorical.
+  - Numerical predictors with many values are treated as continuous.
+  - For variables that were transformed, the distribution before and after the
+    transformation is shown.
+  - The variable descriptions from *data_description.txt* are included with the
+    plots.
 
-The target variable (SalePrice) is skewed right.
+Transformation of the target variable and the predictor variable GrLivArea
+decreased skew.
 
-A number of the predictor variables are concentrated into a single value or a
-small range of values.  Examples:
+For several predictor variables, the distribution is concentrated into a
+single value or a small subset of values.
 
-  - Most houses have all public utilities.
-  - Most house have no pool area.
+  - For example, most house have zero pool area.
 
 ### Target {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
-to_plot <- select(train_data, SalePrice)
-fig <- ggplot(to_plot, aes(x = SalePrice)) +
+```{r, plot-target, cache=TRUE}
+to_plot <- select(train_data, SalePrice) %>%
+    mutate(SalePrice = SalePrice / 1000)
+fig <- ggplot(to_plot,
+              aes(x = SalePrice)) +
     geom_histogram(fill = 'navyblue', bins = 30) +
-    scale_x_continuous(name = 'Price', labels = label_dollar()) +
+    scale_x_continuous(name = 'SalePrice',
+                       labels = label_dollar(suffix = 'k')) +
     ggtitle('SalePrice')
+print(fig)
+
+train_data <- mutate(train_data, SalePrice = log(SalePrice))
+fig <- ggplot(select(train_data, SalePrice),
+              aes(x = SalePrice)) +
+    geom_histogram(fill = 'navyblue', bins = 30) +
+    scale_x_continuous(name = 'log(SalePrice)') +
+    ggtitle('log(SalePrice)')
 print(fig)
 ```
 
@@ -131,16 +159,31 @@ print(fig)
 
 <div class="code-block">
 
-```{r}
+```{r, categorical-distributions, cache=TRUE}
+# Define which variables are categorical.  Note that numeric variables with only
+# a few values (such as YrSold) are treated as categorical, while those
+# containing many values are treated as continuous.
+categorical_predictors <- colnames(
+    select(train_data, where(is.character))
+)
+categorical_predictors <- c(
+    categorical_predictors, 'MSSubClass', 'OverallQual', 'OverallCond',
+    'BsmtFullBath', 'BsmtHalfBath', 'FullBath', 'HalfBath',
+    'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd', 'Fireplaces',
+    'GarageCars', 'MoSold', 'YrSold'
+)
+# Reorder the vector of categorical predictors to match order of column names in
+# the original data set.
+all_column_names <- colnames(train_data)
+reorder_index <- order(match(categorical_predictors, all_column_names))
+categorical_predictors <- categorical_predictors[reorder_index]
+
 # Helper function that finds the total number of characters needed for the
-# labels on the horizontal axis.  If this number is too large, the labels will
-# be rotated.
-#
-# The input argument is a either a character vector or a factor.
+# labels on the horizontal axis.  If this number is too large, the labels are
+# rotated.
 nchar_labels <- function(vector_to_plot) {
-    # Drop NA.
+    # Drop missing values.
     vector_to_plot <- vector_to_plot[!is.na(vector_to_plot)]
-    # If necessary, convert to character.
     char_vector <- as.character(vector_to_plot)
     label_lengths <- nchar(unique(char_vector))
     return(sum(label_lengths))
@@ -156,27 +199,44 @@ set_label_angle <- function(fig, vector_to_plot) {
     return(fig)
 }
 
-# The column MSSubClass, which represents a category labeled with integer
-# values, requires special handling because it is read from the .csv file as an
-# integer.  Converting from an integer vector to a factor for plotting gives an
-# ordering of levels that matches integer ordering, whereas if the column is
-# converted from a character vector to a factor, the lexical order has levels
-# such as '120', '130', etc before '20', '30', etc.
+# The column MSSubClass represents a category labeled with integer values.  In
+# the loop that plots variable distributions, variables containing a few integer
+# values are converted to a factor and plotted with x-axis labels corresponding
+# to all integer values between the min and max.  For MSSubClass, this doesn't
+# work, because the categories don't correspond to a counting sequence 1, 2, ...
+# Instead, the variable is converted to a factor before the loop, which gives an
+# ordering of levels that matches integer order, as in the variable description.
 train_data <- mutate(train_data, MSSubClass = as.factor(MSSubClass))
-nominal_predictors <- colnames(
-    select(train_data, MSSubClass, where(is.character))
-)
 
-for (variable_name in nominal_predictors) {
+for (variable_name in categorical_predictors) {
     # The list variable_descriptions is defined in 'descriptions.R'
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, all_of(variable_name)) %>%
         drop_na()
 
+    # In cases where the variable is an integer, converting it to a factor
+    # before plotting decreases the amount of tweaking that is needed for the
+    # plot.  However, there may be missing breaks/lables in the horizontal axis.
+    # In the training set, for instance, there are no samples that have 7
+    # bedrooms above ground, so 6 ends up next to 8 without special handling.
+    # In order to avoid this, use the limits argument of scale_x_discrete.
+    is_int <- is.integer(to_plot[[variable_name]])
+    if (is_int) {
+        min_val <- min(to_plot[[variable_name]])
+        max_val <- max(to_plot[[variable_name]])
+        x_axis_labels <- seq(min_val, max_val) %>%
+            as.character
+        to_plot[[variable_name]] <- as.factor(to_plot[[variable_name]])
+    }
+
     fig <- ggplot(to_plot, aes_string(x = variable_name)) +
         geom_bar(fill = 'navyblue') +
         ggtitle(variable_name)
-    fig <- set_label_angle(fig, to_plot[[variable_name]])
+    if (is_int) {
+        fig <- fig + scale_x_discrete(limits = x_axis_labels)
+    } else {
+        fig <- set_label_angle(fig, to_plot[[variable_name]])
+    }
 
     print(fig)
     cat(description)
@@ -185,51 +245,64 @@ for (variable_name in nominal_predictors) {
 
 </div>
 
-### Numerical predictors {.tab-display .unnumbered}
+### Continuous predictors {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
-# In the later analysis, the numeric variables with only a few values are
-# treated as discrete, while than those containing many variables are treated as
-# continuous.  In the current code block, bin selection for the two types of
-# numeric variables is done differently
-
-discrete_numeric <- c('OverallQual', 'OverallCond', 'BsmtFullBath',
-                      'BsmtHalfBath', 'FullBath', 'HalfBath',
-                      'BedroomAbvGr', 'KitchenAbvGr', 'TotRmsAbvGrd',
-                      'Fireplaces', 'GarageCars', 'MoSold',
-                      'YrSold')
-
-numeric_predictors <- setdiff(
-    colnames(train_data),
-    c(nominal_predictors, 'Id', 'SalePrice')
+```{r, continuous-distributions, cache=FALSE}
+continuous_predictors <- setdiff(
+    all_column_names,
+    c(categorical_predictors, 'Id', 'SalePrice')
 )
 
-for (variable_name in numeric_predictors) {
+transform_year <- function(x) {
+    return((x - 1900)^3)
+}
+# A list of variable transformations was used for exploring the effect of
+# different transformations.
+transformations <- c(GrLivArea = 'log', YearBuilt = 'transform_year',
+                     GarageYrBlt = 'transform_year')
+transformed <- names(transformations)
+
+# Function to get the label for a transformed variable during plotting.
+get_variable_label <- function(variable_name) {
+    if (variable_name %in% transformed) {
+        func_name <- transformations[[variable_name]]
+        variable_label <- paste0(
+            func_name, '(', variable_name, ')'
+        )
+    } else {
+        variable_label <- variable_name
+    }
+    return(variable_label)
+}
+
+for (variable_name in continuous_predictors) {
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, all_of(variable_name)) %>%
         drop_na()
 
     fig <- ggplot(to_plot, aes_string(x = variable_name)) +
+        geom_histogram(fill = 'navyblue', bins = 30) +
         ggtitle(variable_name)
+    print(fig)
 
-    if (variable_name %in% discrete_numeric) {
-        # Select a bin for each value if we only have a few values.
-        values <- to_plot[[variable_name]]
-        max_value <- max(values, na.rm = T)
-        min_value <- min(values, na.rm = T) - 1
-        label_breaks <- min_value:max_value
-        bin_breaks <- 0.5 + label_breaks
-        fig <- fig +
-            geom_histogram(fill = 'navyblue', breaks = bin_breaks) +
-            scale_x_continuous(breaks = label_breaks)
-    } else {
-        # Otherwise use the default number of bins.
-        fig <- fig + geom_histogram(fill = 'navyblue', bins = 30)
+    if (variable_name %in% transformed) {
+        # Apply the transformation to the variable.
+        func_name <- transformations[[variable_name]]
+        train_data[[variable_name]] <- get(func_name)(
+            train_data[[variable_name]]
+        )
+
+        variable_label <- get_variable_label(variable_name)
+        fig <- ggplot(train_data[variable_name],
+                      aes_string(x = variable_name)) +
+            geom_histogram(fill = 'navyblue', bins = 30) +
+            scale_x_continuous(name = variable_label) +
+            ggtitle(variable_label)
+        print(fig)
     }
 
-    print(fig)
     cat(description)
 }
 ```
@@ -244,44 +317,42 @@ for (variable_name in numeric_predictors) {
 
 ANOVA ($\eta^2$) used for categorical predictors.
 
-  - Numerical predictors with only a few values treated as categorical.
+  - Transforming SalePrice increased $\eta^2$ for several predictors, including
+    the two with highest $\eta^2$.
+  - Example: the highest value of $\eta^2$ (OverallQual) increased from 0.63 to
+    0.67.
 
 $R^2$ used for continuous numerical predictors.
 
-  - Numerical predictors with many values treated as continuous.
+  - Transforming GrLivArea increased $R^2$ from 0.49 to 0.53.
 
 #### Categorical predictors {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
-categorical_predictors <- c(nominal_predictors, discrete_numeric)
-sale_price <- train_data[['SalePrice']]
+```{r, eta-squared, cache=TRUE}
 find_explained_variance <- function(variable_name) {
-    variable <- train_data[[variable_name]]
     # For categorical variables, calculate eta squared, while for
     # continuous variable, calculate R squared.  Within R, these can both be
     # obtained from the lm model by executing the summary command and then
     # extracting the element r.squared.
     #
-    # Explanation:  The command aov used for ANOVA in R is a wrapper to lm that
+    # Details:  The command aov used for ANOVA in R is a wrapper to lm that
     # provides a summary in the traditional form for analysis of variance.  This
     # summary doesn't include eta squared.  However, the value is available as
     # r.squared from the summary for lm.  So if aov is used to generate the
     # model, then eta squared is available as summary.lm(model)$r.squared.
-    model <- lm(sale_price ~ variable)
+    model_formula <- as.formula(paste0('SalePrice ~ ', variable_name))
+    model <- lm(model_formula, train_data)
     return(summary(model)$r.squared)
 }
-eta_squared <- sapply(categorical_predictors, find_explained_variance)
-eta_squared_df <- data.frame(name = categorical_predictors, eta.squared = eta_squared,
+eta_squared_vec <- sapply(categorical_predictors, find_explained_variance)
+eta_squared_df <- data.frame(name = categorical_predictors,
+                             eta.squared = eta_squared_vec,
                              stringsAsFactors = F) %>%
     arrange(desc(eta.squared)) %>%
     rename(`eta squared` = eta.squared)
-datatable(eta_squared_df, rownames = F,
-          options = list(
-              columnDefs = list(table_alignment),
-              digits = 3
-          )) %>%
+get_datatable(eta_squared_df) %>%
     formatRound(columns = 'eta squared', digits = 3)
 ```
 
@@ -291,54 +362,58 @@ datatable(eta_squared_df, rownames = F,
 
 <div class="code-block">
 
-```{r}
-continuous_predictors <- setdiff(numeric_predictors, categorical_predictors)
-r_squared <- sapply(continuous_predictors, find_explained_variance)
-r_squared_df <- data.frame(name = continuous_predictors, r.squared = r_squared) %>%
+```{r, r-squared, cache=FALSE}
+r_squared_vec <- sapply(continuous_predictors, find_explained_variance)
+r_squared_df <- data.frame(name = continuous_predictors,
+                           r.squared = r_squared_vec) %>%
     arrange(desc(r.squared)) %>%
     rename(`R squared` = r.squared)
-datatable(r_squared_df, rownames = F,
-          options = list(
-              columnDefs = list(table_alignment),
-              digits = 3
-          )) %>%
+get_datatable(r_squared_df) %>%
     formatRound(columns = 'R squared', digits = 3)
 ```
 
 </div>
 
-### Plots of sale price vs individual predictors {.tabset}
+### Plots of sale price vs individual predictors {#association-plots .tabset}
 
 #### Summary {.unnumbered}
 
-Predictors with $\eta^2,\, R^2 \geq 0.1$ were plotted against sale price.
+Predictors with large $\eta^2$ or $R^2$ are plotted against sale price.
 
-  - Box plots used for categorical predictors.
-  - Scatter plots used for continuous predictors.
+  - Here "large" is defined to mean $\gtrsim 0.1$.
+  - For both $\eta^2$ and $R^2$, there is a gap in the values at around 0.1, and
+    predictors falling above the gap are plotted.
+  - Predictor distributions and descriptions are also shown.
 
-#### Box plots {.tab-display}
+For several categorical predictors, transformation of SalePrice caused the
+median values shown in the boxplot to fall roughly on a line.
+
+  - This apparent linear relation is exploited in the linear model by treating
+    some categorical predictors as continuous numerical variables.
+
+#### Box plots {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
-high_eta_squared_df <- filter(eta_squared_df, `eta squared` >= 0.1)
-high_eta_squared <- high_eta_squared_df[['eta squared']]
-names(high_eta_squared) <- high_eta_squared_df[['name']]
-for (variable_name in names(high_eta_squared)) {
-    eta_squared <- round(high_eta_squared[variable_name], digits = 3)
+```{r, box-plots, cache=TRUE}
+large_eta_squared <- filter(eta_squared_df, `eta squared` >= 0.085)
+for (variable_name in large_eta_squared[['name']]) {
+    eta_squared <- round(eta_squared_vec[variable_name], digits = 3)
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
         drop_na() %>%
-        mutate(SalePrice = SalePrice / 1000)
-    to_plot[[variable_name]] <- as.factor(to_plot[[variable_name]])
+        mutate(!!variable_name := as.factor(.data[[variable_name]]))
 
     # Box plot
     plot_title <- paste0(variable_name, ', ', '$\\eta^2 = ', eta_squared, '$')
     fig <- ggplot(to_plot,
                   aes(x = reorder(.data[[variable_name]], SalePrice, median),
                       y = SalePrice)) +
-        geom_boxplot(aes(fill = reorder(.data[[variable_name]], SalePrice, median))) +
-        scale_y_continuous(labels = label_dollar(suffix = 'k')) +
+        geom_boxplot(aes(
+            fill = reorder(.data[[variable_name]], SalePrice, median)
+        )) +
+        scale_y_continuous(name = 'log(SalePrice)') +
+        scale_x_discrete(name = variable_name) +
         scale_fill_discrete(name = variable_name) +
         ggtitle(TeX(plot_title))
     fig <- set_label_angle(fig, to_plot[[variable_name]])
@@ -361,34 +436,36 @@ for (variable_name in names(high_eta_squared)) {
 
 </div>
 
-#### Scatter plots {.tab-display}
+#### Scatter plots {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r}
-high_r_squared_df <- filter(r_squared_df, `R squared` >= 0.1)
-high_r_squared <- high_r_squared_df[['R squared']]
-names(high_r_squared) <- high_r_squared_df[['name']]
-for (variable_name in names(high_r_squared)) {
-    r_squared <- round(high_r_squared[variable_name], digits = 3)
+```{r, scatter-plots, cache=FALSE}
+large_r_squared <- filter(r_squared_df, `R squared` >= 0.1)
+for (variable_name in large_r_squared[['name']]) {
+    r_squared <- round(r_squared_vec[variable_name], digits = 3)
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
-        drop_na() %>%
-        mutate(SalePrice = SalePrice / 1000)
+        drop_na()
 
     # Scatter plot
-    plot_title <- paste0(variable_name, ', ', '$R^2 = ', r_squared, '$')
+    variable_label <- get_variable_label(variable_name)
+    plot_title <- paste0(
+        variable_label, ', ', '$R^2 = ', r_squared, '$'
+    )
     fig <- ggplot(to_plot, aes_string(x = variable_name, y = 'SalePrice')) +
         geom_point(color = 'navyblue') +
-        scale_y_continuous(labels = label_dollar(suffix = 'k')) +
+        scale_y_continuous(name = 'log(SalePrice)') +
+        scale_x_continuous(name = variable_label) +
         ggtitle(TeX(plot_title))
 
     print(fig)
 
     # Histogram of the distribution
-    plot_title <- paste(variable_name, 'distribution')
+    plot_title <- paste(variable_label, 'distribution')
     fig <- ggplot(to_plot, aes_string(x = variable_name)) +
         geom_histogram(fill = 'navyblue', bins = 30) +
+        scale_x_continuous(name = variable_label) +
         ggtitle(plot_title)
     print(fig)
 
