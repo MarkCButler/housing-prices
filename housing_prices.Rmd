@@ -57,16 +57,23 @@ Outcome:
 
 ### Summary {.unnumbered}
 
-'NA' was replaced by a string such as 'NB' for 'No Basement' in cases where it
-represented a valid category.
+From the variable descriptions provided in *data_description.txt*, "NA" is a
+valid category for certain columns.
 
-  - From the variable descriptions provided in *data_description.txt*, NA is a
-    valid category for certain columns. Preprocessing with the script
-    *preprocess.R* replaced these NA strings so that they would not be treated
-    as missing values.
+Consistency checks revealed that "NA" sometimes indicates missing data, even
+in variables where it represents a valid category.
 
-After this preprocessing, missing values were concentrated in only a few
-variables.
+  - Example:  The description of variable BsmtExposure has "NA" indicating "No
+    Basement".  But the house with Id 949 has "NA" for BsmtExposure in spite
+    of the fact that BsmtQual is "Good", BsmtCond is "Typical", and
+    TotalBsmtSF ("Total square feet of basement area") is 936.
+
+The script *preprocess.R* attempts to repair inconsistencies and replace "NA"
+by a string such as "NB" for "No Basement" in cases where it represented a
+valid category.
+
+  - In the preprocessed data, only the variable LotFrontage ("Linear feet of
+    street connected to property") has a significant number of missing values.
 
 ### Missing value counts {.tab-display .unnumbered}
 
@@ -438,7 +445,7 @@ Predictors with large $\eta^2$ or $R^2$ are plotted against sale price.
   - Predictor distributions and descriptions are also shown.
 
 The linear profile of several of the predictors improved dramatically due to
-the transformation of SalePrice.
+the transformations.
 
   - For example, the transformation caused the median values shown in many of
     the box plots to fall roughly on a line.
@@ -551,3 +558,50 @@ for (variable_name in large_r_squared[['name']]) {
 ```
 
 </div>
+
+## Feature engineering
+
+The goal is to define simple features that have a strong linear association
+with the target.
+
+The starting point for the process is the set of predictors that have large
+$\eta^2$ or $R^2$.
+
+### Nominal predictors {.tabset}
+
+#### Summary {.unnumbered}
+
+Certain categories, such as "No Basement", are included in multiple
+predictors.  Define a dummy variable for these categories.
+
+  - The "No Basement" category also corresponds to the intercept for some
+    numeric variables, such as TotalBsmtSF (Total square feet of basement
+    area).  Adding the dummy variable allows the nonzero values of TotalBsmtSF
+    to be fit independently of samples with value zero.
+
+Replace nominal variables by numerical rankings in cases where the box plot
+has a strongly linear profile.
+
+#### Dummy variables {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, dummy-variables}
+```
+
+</div>
+
+### Numerical predictors {.tabset}
+
+#### Summary {.unnumbered}
+
+For some numerical variables, the simple linear fit would be significantly
+improved if the samples with value zero were excluded from the fit.  Add dummy
+variables that distinguish zero from nonzero samples for these variables.
+
+  - Example:  TotalBsmtSF (Total square feet of basement area) can be
+    augmented by a dummy variable that equal 1 when the basement area is zero.
+    This allows the samples with nonzero basement area to be fit
+    independently.
+
+Drop outliers that are distorting the simple linear fits.
