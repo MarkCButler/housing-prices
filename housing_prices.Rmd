@@ -79,7 +79,7 @@ valid category.
 
 <div class="code-block">
 
-```{r, missing-data}
+```{r, missing-data, cache=FALSE}
 source('descriptions.R')
 read_data <- function(file) {
     data <- read.csv(file, stringsAsFactors = F)
@@ -146,29 +146,30 @@ small subset of the values.
 
 <div class="code-block">
 
-```{r, plot-target, cache=TRUE}
-# Enclose the commands in curly braces to keep the code output in a single
-# block.
-{
-    to_plot <- select(train_data, SalePrice) %>%
-        mutate(SalePrice = SalePrice / 1000)
-    fig <- ggplot(to_plot,
-                  aes(x = SalePrice)) +
-        geom_histogram(fill = 'navyblue', bins = 30) +
-        scale_x_continuous(name = 'SalePrice',
-                           labels = label_dollar(suffix = 'k')) +
-        ggtitle('SalePrice')
-    print(fig)
+<!-- R chunk to keep echoed code in one continuous block -->
 
-    train_data <- mutate(train_data, SalePrice = log(SalePrice))
-    fig <- ggplot(select(train_data, SalePrice),
-                  aes(x = SalePrice)) +
-        geom_histogram(fill = 'navyblue', bins = 30) +
-        scale_x_continuous(name = 'log(SalePrice)') +
-        ggtitle('log(SalePrice)')
-    print(fig)
-    cat('transformation:  ', 'price -> log(price)', '\n\n')
-}
+```{r, show-plot-target, ref.label='plot-target', eval=FALSE}
+```
+
+```{r, plot-target, cache=FALSE, echo=FALSE}
+to_plot <- select(train_data, SalePrice) %>%
+    mutate(SalePrice = SalePrice / 1000)
+fig <- ggplot(to_plot,
+              aes(x = SalePrice)) +
+    geom_histogram(fill = 'navyblue', bins = 30) +
+    scale_x_continuous(name = 'SalePrice',
+                       labels = label_dollar(suffix = 'k')) +
+    ggtitle('SalePrice')
+print(fig)
+
+train_data <- mutate(train_data, SalePrice = log(SalePrice))
+fig <- ggplot(select(train_data, SalePrice),
+              aes(x = SalePrice)) +
+    geom_histogram(fill = 'navyblue', bins = 30) +
+    scale_x_continuous(name = 'log(SalePrice)') +
+    ggtitle('log(SalePrice)')
+print(fig)
+cat('transformation:  ', 'price -> log(price)', '\n\n')
 ```
 
 </div>
@@ -176,7 +177,7 @@ small subset of the values.
 
 <div class="code-block">
 
-```{r, discrete-distributions, cache=TRUE}
+```{r, setup-distributions, cache=FALSE, echo=FALSE}
 # Given a vector of variable names, reorder the names to match the order used in
 # the original data set (i.e., in csv files and data_description.txt).
 all_column_names <- colnames(train_data)
@@ -240,6 +241,24 @@ get_discrete_values <- function(vector_to_plot) {
     return(axis_labels)
 }
 
+```
+
+<!--
+In this document, R chunks with labels of the form show-... use the ref.label
+option to display the code for two chunks together as one block of code.
+
+During development it is convenient to set cache=TRUE for the chunks that
+generate many plots, while keeping cache=FALSE for chunks that have side
+effects needed later in the document.  However, in the html output with folded
+code, it is distracting to have the echoed code in two blocks, each with its
+own 'Hide' or 'Show' button.  Using ref.label in a chunk with eval=FALSE
+allows the code from two chunks to be displayed as one block of code.
+-->
+
+```{r, show-setup, ref.label=c('setup-distributions', 'discrete-distributions'), eval=FALSE}
+```
+
+```{r, discrete-distributions, cache=TRUE, echo=FALSE}
 to_plot_categorical <- reorder_names(
     c(categorical_predictors, discrete_numeric)
 )
@@ -281,7 +300,7 @@ for (variable_name in to_plot_categorical) {
 
 <div class="code-block">
 
-```{r, continuous-distributions, cache=TRUE}
+```{r transform, cache=FALSE, echo=FALSE}
 # Function used for transforming YearBuilt and GarageYrBlt
 transform_year <- function(x) {
     return((x - 1900)^3)
@@ -318,6 +337,19 @@ get_variable_label <- function(variable_name) {
     return(variable_label)
 }
 
+```
+
+```{r, show-transform, ref.label=c('transform', 'continuous-distributions'), eval=FALSE}
+```
+
+
+```{r, continuous-distributions, cache=TRUE, echo=FALSE}
+# From the consistency checks done by preprocess.R, there are no missing
+# values for GarageYrBlt.  The preprocessing set this variable to zero for
+# houses without a garage.  For convenience in dropping data for plotting,
+# temporarily replace zero by NA.
+bool_index <- train_data$GarageYrBlt == 0
+train_data[bool_index, 'GarageYrBlt'] <- NA
 for (variable_name in continuous_predictors) {
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, all_of(variable_name)) %>%
@@ -373,8 +405,8 @@ variance, the value of $\eta^2$ or $R^2$ was increased by the transformations.
 
 <div class="code-block">
 
-```{r, eta-squared, cache=TRUE}
-get_simple_model <- function(variable_name) {
+```{r, eta-squared, cache=FALSE}
+get_linear_model <- function(predictors) {
     # For categorical variables, perform ANOVA and return eta squared along
     # with predictions based on the model.  For numeric variables, do a simple
     # linear regression and return R squared along with predictions.
@@ -387,7 +419,7 @@ get_simple_model <- function(variable_name) {
     #
     # In the current function, use the lm command both for categorical and
     # numeric predictors.
-    model_formula <- as.formula(paste0('SalePrice ~ ', variable_name))
+    model_formula <- as.formula(paste0('SalePrice ~ ', predictors))
     model <-  lm(model_formula, train_data)
     results <- list(
         r_squared = summary(model)$r.squared,
@@ -396,7 +428,7 @@ get_simple_model <- function(variable_name) {
     return(results)
 }
 
-anova_models <- map(categorical_predictors, get_simple_model)
+anova_models <- map(categorical_predictors, get_linear_model)
 names(anova_models) <- categorical_predictors
 eta_squared_vec <- map_dbl(anova_models, ~ (.)$r_squared)
 eta_squared_df <- data.frame(name = categorical_predictors,
@@ -414,17 +446,18 @@ get_datatable(eta_squared_df) %>%
 
 <div class="code-block">
 
-```{r, r-squared, cache=TRUE}
+```{r, r-squared, cache=FALSE}
 r_squared_variables <- reorder_names(
     c(continuous_predictors, discrete_numeric)
 )
 
-simple_linear_models <- map(r_squared_variables, get_simple_model)
+simple_linear_models <- map(r_squared_variables, get_linear_model)
 names(simple_linear_models) <- r_squared_variables
 simple_linear_prediction <- map(simple_linear_models, ~ (.)$prediction)
 r_squared_vec <- map_dbl(simple_linear_models, ~ (.)$r_squared)
 r_squared_df <- data.frame(name = r_squared_variables,
-                           r.squared = r_squared_vec) %>%
+                           r.squared = r_squared_vec,
+                           stringsAsFactors = F) %>%
     arrange(desc(r.squared)) %>%
     rename(`R squared` = r.squared)
 get_datatable(r_squared_df) %>%
@@ -455,15 +488,22 @@ the transformations.
 
 <div class="code-block">
 
-```{r, box-plots, cache=TRUE}
+```{r, large-eta, cache=FALSE, echo=FALSE}
 large_eta_squared <- filter(eta_squared_df, `eta squared` >= 0.085)
-for (variable_name in large_eta_squared[['name']]) {
+
+```
+
+```{r, show-large-eta, ref.label=c('large-eta', 'box-plots'), eval=FALSE}
+```
+
+```{r, box-plots, cache=TRUE, echo=FALSE}
+for (variable_name in large_eta_squared$name) {
     eta_squared <- round(eta_squared_vec[variable_name], digits = 3)
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
         drop_na()
     to_plot[[variable_name]] <- as.factor(to_plot[[variable_name]]) %>%
-        reorder(to_plot[['SalePrice']], median)
+        reorder(to_plot$SalePrice, median)
 
     plot_title <- paste0(variable_name, ', ', '$\\eta^2 = ', eta_squared, '$')
     fig <- ggplot(to_plot, aes_string(x = variable_name, y = 'SalePrice')) +
@@ -494,21 +534,25 @@ for (variable_name in large_eta_squared[['name']]) {
 
 <div class="code-block">
 
-```{r, scatter-plots, cache=TRUE}
+```{r, large-r, cache=FALSE, echo=FALSE}
 large_r_squared <- filter(r_squared_df, `R squared` >= 0.095)
-for (variable_name in large_r_squared[['name']]) {
-    r_squared <- round(r_squared_vec[variable_name], digits = 3)
+
+# Reusable plotting function
+plot_simple_fit <- function(variable_name, prediction, r_squared = 0) {
     description <- variable_descriptions[[variable_name]]
-    prediction <- simple_linear_prediction[[variable_name]]
     to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
         drop_na() %>%
         mutate(PredictedPrice = prediction)
 
     # Scatter plot
     variable_label <- get_variable_label(variable_name)
-    plot_title <- paste0(
-        variable_label, ', ', '$R^2 = ', r_squared, '$'
-    )
+    if (as.logical(r_squared)) {
+        plot_title <- paste0(
+            variable_label, ', ', '$R^2 = ', r_squared, '$'
+        )
+    } else {
+        plot_title <- variable_label
+    }
     fig <- ggplot(to_plot, aes_string(x = variable_name)) +
         geom_point(aes(y = SalePrice, color = 'data')) +
         geom_line(aes(y = PredictedPrice, color = 'fit')) +
@@ -555,6 +599,18 @@ for (variable_name in large_r_squared[['name']]) {
     }
     cat(description)
 }
+
+```
+
+```{r, show-large-r, ref.label=c('large-r', 'scatter-plots'), eval=FALSE}
+```
+
+```{r, scatter-plots, cache=TRUE, echo=FALSE}
+for (variable_name in large_r_squared$name) {
+    r_squared <- round(r_squared_vec[variable_name], digits = 3)
+    prediction <- simple_linear_prediction[[variable_name]]
+    plot_simple_fit(variable_name, prediction, r_squared)
+}
 ```
 
 </div>
@@ -567,27 +623,100 @@ with the target.
 The starting point for the process is the set of predictors that have large
 $\eta^2$ or $R^2$.
 
-### Nominal predictors {.tabset}
+### Define shared dummy variables {.tabset}
 
 #### Summary {.unnumbered}
 
 Certain categories, such as "No Basement", are included in multiple
-predictors.  Define a dummy variable for these categories.
+predictors.  Define dummy variables for these categories.
 
-  - The "No Basement" category also corresponds to the intercept for some
-    numeric variables, such as TotalBsmtSF (Total square feet of basement
+Excluding values represented by these dummy variables from box plots and
+scatter plots for other variables gives stronger linear profiles.
+
+  - Example:  The "No Basement" category also corresponds to the intercept for
+    some numeric variables, such as TotalBsmtSF (Total square feet of basement
     area).  Adding the dummy variable allows the nonzero values of TotalBsmtSF
-    to be fit independently of samples with value zero.
+    to be fit independently, giving a better linear association.
 
-Replace nominal variables by numerical rankings in cases where the box plot
-has a strongly linear profile.
 
-#### Dummy variables {.tab-display .unnumbered}
+#### Scatter plots {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r, dummy-variables}
+```{r, dummy-variables, cache=FALSE, echo=FALSE}
+# In the r chunk 'continuous-distributions', the variable GarageYrBlt was set
+# to NA in the training data for houses that have no garage.  This was done to
+# to simplify commands for plotting variables inside a loop.  (All missing
+# values were dropped before plotting.)  The consistency checks done during
+# preprocessing found no missing values in GarageYrBlt, so NA could be used
+# without ambiguity as an equivalent to 0.  Reset NA to zero in this variable.
+bool_index <- is.na(train_data$GarageYrBlt)
+train_data[bool_index, 'GarageYrBlt'] <- 0
+
+# Add dummy variables to data.  The variables used in defining the new dummy
+# variables have no missing values in either training data or test data.
+define_dummies <- function(data) {
+    data <- mutate(data,
+                   NoBasement = as.integer(TotalBsmtSF == 0),
+                   NoGarage = as.integer(GarageYrBlt == 0),
+                   NoFireplace = as.integer(Fireplaces == 0))
+    return(data)
+}
+train_data <- define_dummies(train_data)
+
+basement_related <- c(
+    'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinSF1',
+    'BsmtFinType2', 'BsmtFinSF2', 'BsmtUnfSF', 'TotalBsmtSF', 'BsmtFullBath',
+    'BsmtHalfBath'
+)
+garage_related <- c(
+    'GarageFinish', 'GarageQual', 'GarageCond', 'GarageType', 'GarageYrBlt',
+    'GarageCars', 'GarageArea'
+)
+fireplace_related <- c('FireplaceQu', 'Fireplaces')
+
+# Find the dummy variable that imposes a constraint on the values for a variable.
+get_related_dummy <- function(variable_name) {
+    dummy <- case_when(
+        variable_name %in% basement_related ~ 'NoBasement',
+        variable_name %in% garage_related ~ 'NoGarage',
+        variable_name %in% fireplace_related ~ 'NoFireplace',
+        TRUE ~ ''
+    )
+    return(dummy)
+}
+
+bool_index <- !(all_column_names %in% c('Id', 'SalePrice'))
+all_predictors <- all_column_names[bool_index]
+related_dummy <- get_related_dummy(all_predictors)
+names(related_dummy) <- all_predictors
+
 ```
+
+```{r, show-dummy, ref.label=c('dummy-variables', 'better-scatter-plots'), eval=FALSE}
+```
+
+```{r, better-scatter-plots, cache=TRUE, echo=FALSE}
+# To see how certain fits are improved by the addition of dummy variables,
+# include a dummy variable in the model for certain predictors.  For example,
+# include NoBasement as a second predictor in the finding the linear fit for
+# the predictor TotalBsmftSF.
+for (variable_name in large_r_squared$name) {
+    # Get the related dummy if there is one.  If there is, update simple_linear_prediction.
+    # Or maybe define a new variable of lienar predictions.
+}
+```
+
+</div>
+
+#### Scatter plots {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, better-box-plots}
+print('hello')
+```
+
 
 </div>
 
@@ -605,3 +734,7 @@ variables that distinguish zero from nonzero samples for these variables.
     independently.
 
 Drop outliers that are distorting the simple linear fits.
+
+
+Replace nominal variables by numerical rankings in cases where the box plot
+has a strongly linear profile.
