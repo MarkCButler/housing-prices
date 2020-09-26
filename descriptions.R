@@ -351,8 +351,8 @@ variable_descriptions <- list(
        FuseF    60 AMP Fuse Box and mostly Romex wiring (Fair)
        FuseP    60 AMP Fuse Box and mostly knob & tube wiring (poor)
        Mix      Mixed',
-    X1stFlrSF = '1stFlrSF: First Floor square feet',
-    X2ndFlrSF = '2ndFlrSF: Second floor square feet',
+    FirstFlrSF = 'FirstFlrSF: First Floor square feet',
+    SecondFlrSF = 'SecondFlrSF: Second floor square feet',
     LowQualFinSF = 'LowQualFinSF: Low quality finished square feet (all floors)',
     GrLivArea = 'GrLivArea: Above grade (ground) living area square feet',
     BsmtFullBath = 'BsmtFullBath: Basement full bathrooms',
@@ -431,7 +431,7 @@ variable_descriptions <- list(
     WoodDeckSF = 'WoodDeckSF: Wood deck area in square feet',
     OpenPorchSF = 'OpenPorchSF: Open porch area in square feet',
     EnclosedPorch = 'EnclosedPorch: Enclosed porch area in square feet',
-    X3SsnPorch = '3SsnPorch: Three season porch area in square feet',
+    ThreeSsnPorch = 'ThreeSsnPorch: Three season porch area in square feet',
     ScreenPorch = 'ScreenPorch: Screen porch area in square feet',
     PoolArea = 'PoolArea: Pool area in square feet',
     PoolQC = 'PoolQC: Pool quality

@@ -8,17 +8,11 @@ library(stringr)
 # When the data is read with na.strings = '', the check sum(is.na(data))
 # returns 0 for both training and test data.  All missing values in the csv
 # file are represented by the unquoted string NA.
-read_data <- function(file) {
-    data <- read.csv(file, stringsAsFactors = F, na.strings = '')
-    return(data)
-}
-train_data <- read_data('data/train.csv')
-test_data <- read_data('data/test.csv')
-
+#
 # From the data description, NA is a valid value for certain categorical
 # columns.  The current script replaces NA by strings such as 'NB' for 'No
 # Basement' in cases where it NA represents a valid category.
-
+#
 # The script also does consistency checks and data repair.
 #
 # Example:  Do all samples with category 'No Basement' for one predictor have
@@ -41,6 +35,22 @@ test_data <- read_data('data/test.csv')
 # to correct the data but tricky to write the correction into a rule, so the
 # a few corrections are done ad hoc as commands in the main body of the
 # script.
+
+# This script generates formatted output using the print command, and the sink
+# command directs the output of print to a file.
+sink('data_repair.log')
+
+read_data <- function(file) {
+    # Rename variables that starting with a number in the csv file but have
+    # been modified by read.csv to started with an X.
+    data <- read.csv(file, stringsAsFactors = FALSE, na.strings = '') %>%
+        rename(FirstFlrSF = X1stFlrSF,
+               SecondFlrSF = X2ndFlrSF,
+               ThreeSsnPorch = X3SsnPorch)
+    return(data)
+}
+train_data <- read_data('data/train.csv')
+test_data <- read_data('data/test.csv')
 
 basement_predictors <- list(
     no_amenity_na = c('BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1',
@@ -171,9 +181,9 @@ check_data <- function(data) {
     return(data)
 }
 
-cat('Checking for inconsistencies in the training data.')
+cat('Checking for inconsistencies in the training data.\n')
 train_data <- check_data(train_data)
-cat('Checking for inconsistencies in the test data.')
+cat('\nChecking for inconsistencies in the test data.\n')
 test_data <- check_data(test_data)
 
 # As noted in the comments for the function repair_inconsistencies, most of the
@@ -248,7 +258,9 @@ clean_data <- function(data) {
 train_data <- clean_data(train_data)
 test_data <- clean_data(test_data)
 
+# Call sink again to stop redirecting stdout to a file.
+sink()
 
 # Save modified data.
-write.csv(train_data, 'data/train.csv', row.names = F)
-write.csv(test_data, 'data/test.csv', row.names = F)
+write.csv(train_data, 'data/train.csv', row.names = FALSE)
+write.csv(test_data, 'data/test.csv', row.names = FALSE)
