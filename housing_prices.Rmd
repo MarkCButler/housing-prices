@@ -32,9 +32,18 @@ library(DT)
 library(ggplot2)
 library(latex2exp)
 library(purrr)
+library(rlang)
 library(scales)
 library(tidyr)
 ```
+
+# Summary
+
+The work develops two models for predicting the sale price of houses in the
+[Ames Housing Dataset](http://www.amstat.org/publications/jse/v19n3/decock.pdf):
+
+  - A multilinear model that aims to give insight into the housing market
+  - A (to-be-determined, probably tree-based) model that aims for predictive accuracy
 
 # Exploratory data analysis / feature engineering
 
@@ -82,7 +91,7 @@ valid category.
 ```{r, missing-data, cache=FALSE}
 source('descriptions.R')
 read_data <- function(file) {
-    data <- read.csv(file, stringsAsFactors = F)
+    data <- read.csv(file, stringsAsFactors = FALSE)
     return(data)
 }
 train_data <- read_data('data/train.csv')
@@ -91,7 +100,7 @@ get_na_counts <- function(data, dataset_name) {
     na_counts <- data.frame(name = colnames(data),
                             count = colSums(is.na(data)),
                             dataset = dataset_name,
-                            stringsAsFactors = F) %>%
+                            stringsAsFactors = FALSE) %>%
         arrange(desc(count)) %>%
         filter(count != 0)
     return(na_counts)
@@ -100,7 +109,7 @@ get_na_counts <- function(data, dataset_name) {
 na_counts_train <- get_na_counts(train_data, 'train')
 na_counts_test <- get_na_counts(test_data, 'test')
 combined_na_counts <- rbind(na_counts_test, na_counts_train,
-                            make.row.names = F) %>%
+                            make.row.names = FALSE) %>%
     arrange(desc(count), desc(dataset), name) %>%
     rename(`missing value count` = count)
 
@@ -110,7 +119,7 @@ get_datatable <- function(data) {
     table_alignment <- list(className = 'dt-center', targets = '_all')
     table_with_options <- datatable(
         data,
-        rownames = F,
+        rownames = FALSE,
         options = list(columnDefs = list(table_alignment), digits = 3)
     )
     return(table_with_options)
@@ -151,7 +160,7 @@ small subset of the values.
 ```{r, show-plot-target, ref.label='plot-target', eval=FALSE}
 ```
 
-```{r, plot-target, cache=FALSE, echo=FALSE}
+```{r, plot-target, cache=TRUE, echo=FALSE}
 to_plot <- select(train_data, SalePrice) %>%
     mutate(SalePrice = SalePrice / 1000)
 fig <- ggplot(to_plot,
@@ -162,8 +171,8 @@ fig <- ggplot(to_plot,
     ggtitle('SalePrice')
 print(fig)
 
-train_data <- mutate(train_data, SalePrice = log(SalePrice))
-fig <- ggplot(select(train_data, SalePrice),
+to_plot <- mutate(to_plot, SalePrice = log(SalePrice))
+fig <- ggplot(select(to_plot, SalePrice),
               aes(x = SalePrice)) +
     geom_histogram(fill = 'navyblue', bins = 30) +
     scale_x_continuous(name = 'log(SalePrice)') +
@@ -301,11 +310,19 @@ for (variable_name in to_plot_categorical) {
 <div class="code-block">
 
 ```{r transform, cache=FALSE, echo=FALSE}
+# From the consistency checks done by preprocess.R, there are no missing
+# values for GarageYrBlt in eiether the training data or the test data.  The
+# preprocessing script set this variable to zero for houses without a garage.
+# For convenience in dropping data for plotting, temporarily replace zero by
+# NA.
+bool_index <- train_data$GarageYrBlt == 0
+train_data[bool_index, 'GarageYrBlt'] <- NA
+
 # Function used for transforming YearBuilt and GarageYrBlt
 transform_year <- function(x) {
-    return((x - 1900)^3)
+    return((x - 1900)^3 / 1e6)
 }
-transform_year_formula <- 'year -> (year - 1900)^3'
+transform_year_formula <- 'year -> (year - 1900)^3 / 1e6'
 
 # The information associated with transforming variables is entered as a list
 # of lists.  In order to avoid awkward syntax in accessing elements of nested
@@ -344,12 +361,6 @@ get_variable_label <- function(variable_name) {
 
 
 ```{r, continuous-distributions, cache=TRUE, echo=FALSE}
-# From the consistency checks done by preprocess.R, there are no missing
-# values for GarageYrBlt.  The preprocessing set this variable to zero for
-# houses without a garage.  For convenience in dropping data for plotting,
-# temporarily replace zero by NA.
-bool_index <- train_data$GarageYrBlt == 0
-train_data[bool_index, 'GarageYrBlt'] <- NA
 for (variable_name in continuous_predictors) {
     description <- variable_descriptions[[variable_name]]
     to_plot <- select(train_data, all_of(variable_name)) %>%
@@ -364,12 +375,12 @@ for (variable_name in continuous_predictors) {
         # Apply the transformation to the variable.
         func <- transformation_functions[[variable_name]]
         formula <- transformation_formulas[variable_name]
-        train_data[[variable_name]] <- func(
-            train_data[[variable_name]]
+        to_plot[[variable_name]] <- func(
+            to_plot[[variable_name]]
         )
 
         variable_label <- get_variable_label(variable_name)
-        fig <- ggplot(drop_na(train_data[variable_name]),
+        fig <- ggplot(to_plot,
                       aes_string(x = variable_name)) +
             geom_histogram(fill = 'navyblue', bins = 30) +
             scale_x_continuous(name = variable_label) +
@@ -385,15 +396,13 @@ for (variable_name in continuous_predictors) {
 
 </div>
 
-## Variable associations
+## Which predictors can explain the variance in the sale price? {.tabset}
 
-### Which predictors can explain the variance in the sale price? {.tabset}
+### Summary {.unnumbered}
 
-#### Summary {.unnumbered}
+ANOVA ($\eta^2$) is used for nominal predictors.
 
-ANOVA ($\eta^2$) used for nominal predictors.
-
-$R^2$ used for numeric predictors.
+$R^2$ is used for numeric predictors.
 
 For many of the predictors that individually explain the largest fraction of
 variance, the value of $\eta^2$ or $R^2$ was increased by the transformations.
@@ -401,12 +410,24 @@ variance, the value of $\eta^2$ or $R^2$ was increased by the transformations.
   - Example:  the highest value of $R^2$ (OverallQual) increased from 0.63 to
     0.67 due to the transformation of SalePrice.
 
-#### Nominal predictors {.tab-display .unnumbered}
+### Nominal predictors {.tab-display .unnumbered}
 
 <div class="code-block">
 
 ```{r, eta-squared, cache=FALSE}
-get_linear_model <- function(predictors) {
+# Apply transformations to variables in the training data.  The R chunks that
+# generate large plots are cached, and so transformations in those chunks
+# were done to temporary plotting data frames.
+train_data <- mutate(train_data, SalePrice = log(SalePrice))
+for (variable_name in transformed_variables) {
+    # Apply the transformation to the variable.
+    func <- transformation_functions[[variable_name]]
+    train_data[[variable_name]] <- func(train_data[[variable_name]])
+}
+
+get_linear_model <- function(variable_name,
+                             dummy_filter = '',
+                             outliers = integer()) {
     # For categorical variables, perform ANOVA and return eta squared along
     # with predictions based on the model.  For numeric variables, do a simple
     # linear regression and return R squared along with predictions.
@@ -419,21 +440,31 @@ get_linear_model <- function(predictors) {
     #
     # In the current function, use the lm command both for categorical and
     # numeric predictors.
-    model_formula <- as.formula(paste0('SalePrice ~ ', predictors))
-    model <-  lm(model_formula, train_data)
-    results <- list(
-        r_squared = summary(model)$r.squared,
-        prediction = predict(model, na.action = na.omit)
-    )
-    return(results)
+    data <- filter(train_data, !(Id %in% outliers))
+    model_formula <- paste0('SalePrice ~ ', variable_name)
+    if  (nchar(dummy_filter) > 0) {
+        model_formula <- paste(model_formula, '+', dummy_filter)
+        vars <- c(variable_name, dummy_filter)
+        data <- select(data, SalePrice, all_of(vars)) %>%
+            drop_na()
+    } else {
+        data <- select(data, SalePrice, all_of(variable_name)) %>%
+            drop_na()
+    }
+    model_formula <- as.formula(model_formula)
+    model <-  lm(model_formula, data)
+    model$formula <- model_formula
+    model$dummy_filter <- dummy_filter
+    model$outliers <- outliers
+    return(model)
 }
 
 anova_models <- map(categorical_predictors, get_linear_model)
 names(anova_models) <- categorical_predictors
-eta_squared_vec <- map_dbl(anova_models, ~ (.)$r_squared)
+eta_squared_vec <- map_dbl(anova_models, ~ summary(.)$r.squared)
 eta_squared_df <- data.frame(name = categorical_predictors,
                              eta.squared = eta_squared_vec,
-                             stringsAsFactors = F) %>%
+                             stringsAsFactors = FALSE) %>%
     arrange(desc(eta.squared)) %>%
     rename(`eta squared` = eta.squared)
 get_datatable(eta_squared_df) %>%
@@ -442,7 +473,7 @@ get_datatable(eta_squared_df) %>%
 
 </div>
 
-#### Numeric predictors  {.tab-display .unnumbered}
+### Numeric predictors  {.tab-display .unnumbered}
 
 <div class="code-block">
 
@@ -451,13 +482,12 @@ r_squared_variables <- reorder_names(
     c(continuous_predictors, discrete_numeric)
 )
 
-simple_linear_models <- map(r_squared_variables, get_linear_model)
-names(simple_linear_models) <- r_squared_variables
-simple_linear_prediction <- map(simple_linear_models, ~ (.)$prediction)
-r_squared_vec <- map_dbl(simple_linear_models, ~ (.)$r_squared)
+linear_models <- map(r_squared_variables, get_linear_model)
+names(linear_models) <- r_squared_variables
+r_squared_vec <- map_dbl(linear_models, ~ summary(.)$r.squared)
 r_squared_df <- data.frame(name = r_squared_variables,
                            r.squared = r_squared_vec,
-                           stringsAsFactors = F) %>%
+                           stringsAsFactors = FALSE) %>%
     arrange(desc(r.squared)) %>%
     rename(`R squared` = r.squared)
 get_datatable(r_squared_df) %>%
@@ -466,9 +496,9 @@ get_datatable(r_squared_df) %>%
 
 </div>
 
-### Plots of sale price vs individual predictors {#association-plots .tabset}
+## Plots of sale price vs individual predictors {#association-plots .tabset}
 
-#### Summary {.unnumbered}
+### Summary {.unnumbered}
 
 Predictors with large $\eta^2$ or $R^2$ are plotted against sale price.
 
@@ -484,7 +514,7 @@ the transformations.
     the box plots to fall roughly on a line.
 
 
-#### Box plots {.tab-display .unnumbered}
+### Box plots {.tab-display .unnumbered}
 
 <div class="code-block">
 
@@ -530,7 +560,7 @@ for (variable_name in large_eta_squared$name) {
 
 </div>
 
-#### Scatter plots {.tab-display .unnumbered}
+### Scatter plots {.tab-display .unnumbered}
 
 <div class="code-block">
 
@@ -538,15 +568,29 @@ for (variable_name in large_eta_squared$name) {
 large_r_squared <- filter(r_squared_df, `R squared` >= 0.095)
 
 # Reusable plotting function
-plot_simple_fit <- function(variable_name, prediction, r_squared = 0) {
+plot_simple_fit <- function(variable_name, linear_model, r_squared = 0) {
+    outliers <- linear_model$outliers
+    dummy_filter <- linear_model$dummy_filter
     description <- variable_descriptions[[variable_name]]
-    to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
-        drop_na() %>%
-        mutate(PredictedPrice = prediction)
+    to_plot <- filter(train_data, !(Id %in% outliers))
+
+    if (nchar(dummy_filter) > 0) {
+        to_plot <- filter(to_plot, .data[[dummy_filter]] == 0) %>%
+            select(SalePrice, all_of(c(variable_name, dummy_filter))) %>%
+            drop_na()
+    } else {
+        to_plot <-  select(to_plot, SalePrice, all_of(variable_name)) %>%
+            drop_na()
+    }
+
+    prediction <- predict(linear_model, to_plot)
+
+    to_plot <- mutate(to_plot, PredictedPrice = prediction)
 
     # Scatter plot
     variable_label <- get_variable_label(variable_name)
     if (as.logical(r_squared)) {
+        r_squared <- round(r_squared_vec[variable_name], digits = 3)
         plot_title <- paste0(
             variable_label, ', ', '$R^2 = ', r_squared, '$'
         )
@@ -608,8 +652,8 @@ plot_simple_fit <- function(variable_name, prediction, r_squared = 0) {
 ```{r, scatter-plots, cache=TRUE, echo=FALSE}
 for (variable_name in large_r_squared$name) {
     r_squared <- round(r_squared_vec[variable_name], digits = 3)
-    prediction <- simple_linear_prediction[[variable_name]]
-    plot_simple_fit(variable_name, prediction, r_squared)
+    linear_model <- linear_models[[variable_name]]
+    plot_simple_fit(variable_name, linear_model, r_squared)
 }
 ```
 
@@ -623,46 +667,51 @@ with the target.
 The starting point for the process is the set of predictors that have large
 $\eta^2$ or $R^2$.
 
-### Define shared dummy variables {.tabset}
+### Define dummy variables, exclude outliers {.tabset}
 
 #### Summary {.unnumbered}
 
-Certain categories, such as "No Basement", are included in multiple
-predictors.  Define dummy variables for these categories.
+For certain scatter plots, the fit appears distorted by outliers and/or by
+the points at the vertical intercept.
 
-Excluding values represented by these dummy variables from box plots and
-scatter plots for other variables gives stronger linear profiles.
+Distortions due to the vertical intercept can be eliminated by defining a
+dummy variable.
 
-  - Example:  The "No Basement" category also corresponds to the intercept for
-    some numeric variables, such as TotalBsmtSF (Total square feet of basement
-    area).  Adding the dummy variable allows the nonzero values of TotalBsmtSF
-    to be fit independently, giving a better linear association.
+  - Example:  A dummy variable NoBasement that identifies houses without a
+    basement was defined order to avoid distortions in the fit for variables
+    that characterize basement area.
+
+With outliers excluded and appropriate dummy variables defined, $R^2$
+increased and the fit shown in scatter plots improved.
 
 
-#### Scatter plots {.tab-display .unnumbered}
+#### Changes in $R^2$ {.tab-display .unnumbered}
 
 <div class="code-block">
 
 ```{r, dummy-variables, cache=FALSE, echo=FALSE}
-# In the r chunk 'continuous-distributions', the variable GarageYrBlt was set
-# to NA in the training data for houses that have no garage.  This was done to
-# to simplify commands for plotting variables inside a loop.  (All missing
-# values were dropped before plotting.)  The consistency checks done during
-# preprocessing found no missing values in GarageYrBlt, so NA could be used
-# without ambiguity as an equivalent to 0.  Reset NA to zero in this variable.
-bool_index <- is.na(train_data$GarageYrBlt)
-train_data[bool_index, 'GarageYrBlt'] <- 0
-
-# Add dummy variables to data.  The variables used in defining the new dummy
-# variables have no missing values in either training data or test data.
+# Add dummy variables to data.  From the consistency checks done by the
+# preprocessing script, the variables used in defining NoBasement,
+# NoGarage, NoFireplace had no missing values in the original data sets
+# (both training and test).  However, the current script set houses with no
+# garage to have GarageYr to NA to facilitate plotting, and so is.na is used
+# to define the variable NoGarage.
 define_dummies <- function(data) {
     data <- mutate(data,
                    NoBasement = as.integer(TotalBsmtSF == 0),
-                   NoGarage = as.integer(GarageYrBlt == 0),
-                   NoFireplace = as.integer(Fireplaces == 0))
+                   NoGarage = as.integer(is.na(GarageYrBlt)),
+                   NoFireplace = as.integer(Fireplaces == 0),
+                   NoSecondFloor = as.integer(SecondFlrSF == 0))
     return(data)
 }
 train_data <- define_dummies(train_data)
+
+# Now that NoGarage can be used to distinguish houses without a garage,
+# GarageYrBlt can be set to an arbitrary value for houses without a garage.
+# Choose -0.1 as an arbitrary value to separate these houses in the plot of
+# GarageYrBlt.
+bool_index <- is.na(train_data$GarageYrBlt)
+train_data[bool_index, 'GarageYrBlt'] <- -0.1
 
 basement_related <- c(
     'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinSF1',
@@ -674,37 +723,126 @@ garage_related <- c(
     'GarageCars', 'GarageArea'
 )
 fireplace_related <- c('FireplaceQu', 'Fireplaces')
+second_floor_related <- 'SecondFlrSF'
 
-# Find the dummy variable that imposes a constraint on the values for a variable.
-get_related_dummy <- function(variable_name) {
+# Find the dummy variable that imposes a constraint on the values for a
+# variable.
+get_dummy_filter <- function(variable_name) {
     dummy <- case_when(
         variable_name %in% basement_related ~ 'NoBasement',
         variable_name %in% garage_related ~ 'NoGarage',
         variable_name %in% fireplace_related ~ 'NoFireplace',
+        variable_name %in% second_floor_related ~ 'NoSecondFloor',
         TRUE ~ ''
     )
     return(dummy)
 }
 
 bool_index <- !(all_column_names %in% c('Id', 'SalePrice'))
-all_predictors <- all_column_names[bool_index]
-related_dummy <- get_related_dummy(all_predictors)
-names(related_dummy) <- all_predictors
+original_predictors <- all_column_names[bool_index]
+dummy_filters <- get_dummy_filter(original_predictors)
+names(dummy_filters) <- original_predictors
 
 ```
 
-```{r, show-dummy, ref.label=c('dummy-variables', 'better-scatter-plots'), eval=FALSE}
-```
+```{r, outliers, cache=FALSE, echo=FALSE}
+# For certain variables, the fit is visibly off because of a few outliers for
+# which the variable has a very large value.  Define a vector of formula
+# strings to use for dropping outliers in evaluating the fit of individual
+# variables.
+outlier_formulas <- c(
+    GrLivArea = '>= 8.45',
+    GarageArea = '>= 1248',
+    TotalBsmtSF = '>= 3000',
+    BsmtFinSF1 = '>= 3000',
+    SecondFlrSF = '> 3000',
+    LotFrontage = '> 300'
+)
 
-```{r, better-scatter-plots, cache=TRUE, echo=FALSE}
-# To see how certain fits are improved by the addition of dummy variables,
-# include a dummy variable in the model for certain predictors.  For example,
-# include NoBasement as a second predictor in the finding the linear fit for
-# the predictor TotalBsmftSF.
-for (variable_name in large_r_squared$name) {
-    # Get the related dummy if there is one.  If there is, update simple_linear_prediction.
-    # Or maybe define a new variable of lienar predictions.
+# Convert these formulas into a list of outliers.
+get_outliers <- function(data, variable_name) {
+    if (variable_name %in% names(outlier_formulas)) {
+        formula <- parse_expr(paste(
+            variable_name, outlier_formulas[[variable_name]]
+        ))
+        filtered_data <- filter(data, !!formula)
+        outliers <- filtered_data$Id
+    }
+    else {
+        outliers <- integer()
+    }
+    return(outliers)
 }
+
+variable_outliers <- map(original_predictors,
+                         ~ get_outliers(train_data, .))
+names(variable_outliers) <- original_predictors
+```
+
+```{r, r-squared-changes, ref.label=c('dummy-variables', 'outliers', 'update-r-squared'), eval=FALSE}
+```
+
+```{r, update-r-squared, cache=FALSE, echo=FALSE}
+# In order to check how linear fits are improved by the exclusion of outliers
+# and/or the addition of dummy variables, generate new linear models.  For
+# example, include NoBasement as a second predictor in the finding the
+# linear fit for the predictor TotalBsmftSF, and exclude
+# variable_outliers[['TotalBsmtSF']] from the fit.
+#
+# As new fits are generated, append values to vectors that will form a data
+# frame showing changes in R squared.
+original_model <- character()
+updated_model <- character()
+original_r_squared <- numeric()
+updated_r_squared <- numeric()
+for (variable_name in large_r_squared$name) {
+    outliers <- variable_outliers[[variable_name]]
+    dummy_filter <- dummy_filters[variable_name]
+    model_update_needed <- length(outliers) > 0 | nchar(dummy_filter) > 0
+    if (model_update_needed) {
+        # The elements of dummy_filters are named.  For instance, in the case
+        # where variable_name is 'TotalBsmtSF', the variable
+        #
+        # dummy_filter <- dummy_filters[variable_name]
+        #
+        # is the following:
+        #
+        # > dummy_filter
+        #  TotalBsmtSF
+        #  "NoBasement"
+        #
+        # If dummy_filter is used in a dplyr select statement, the column
+        # 'NoBasement' gets selected and then renamed to TotalBsmtSF.  In
+        # order to avoid this, set the name of dummy_filter to NULL.
+        names(dummy_filter) <- NULL
+        linear_model <- get_linear_model(
+            variable_name, dummy_filter, outliers = outliers
+        )
+        linear_models[[variable_name]] <- linear_model
+
+        original_model <- c(original_model, variable_name)
+        if (nchar(dummy_filter) > 0) {
+            updated_model <- c(updated_model,
+                               paste(variable_name, '+', dummy_filter))
+        } else {
+            updated_model <- c(updated_model, variable_name)
+        }
+        original_r_squared <- c(original_r_squared,
+                                r_squared_vec[variable_name])
+        updated_r_squared <- c(updated_r_squared,
+                               summary(linear_model)$r.squared)
+    }
+}
+
+r_squared_changes <- data.frame(`original model` = original_model,
+                                `original R squared` = original_r_squared,
+                                `updated model` = updated_model,
+                                `updated R squared` = updated_r_squared,
+                                check.names = FALSE,
+                                stringsAsFactors = FALSE)
+get_datatable(r_squared_changes) %>%
+    formatRound(columns = c('original R squared', 'updated R squared'),
+                digits = 3)
 ```
 
 </div>
@@ -713,28 +851,21 @@ for (variable_name in large_r_squared$name) {
 
 <div class="code-block">
 
-```{r, better-box-plots}
-print('hello')
+```{r, better-scatter-plots, cache=TRUE}
+for (variable_name in r_squared_changes[['original model']]) {
+    bool_index <- r_squared_changes[['original model']] == variable_name
+    r_squared <- round(r_squared_changes[bool_index, 'original R squared'],
+                       digits = 3)
+    linear_model <- linear_models[[variable_name]]
+    plot_simple_fit(variable_name, linear_model, r_squared)
+}
 ```
-
 
 </div>
 
-### Numerical predictors {.tabset}
+### Encode nominal variables with numbers {.tabset}
 
 #### Summary {.unnumbered}
-
-For some numerical variables, the simple linear fit would be significantly
-improved if the samples with value zero were excluded from the fit.  Add dummy
-variables that distinguish zero from nonzero samples for these variables.
-
-  - Example:  TotalBsmtSF (Total square feet of basement area) can be
-    augmented by a dummy variable that equal 1 when the basement area is zero.
-    This allows the samples with nonzero basement area to be fit
-    independently.
-
-Drop outliers that are distorting the simple linear fits.
-
 
 Replace nominal variables by numerical rankings in cases where the box plot
 has a strongly linear profile.
