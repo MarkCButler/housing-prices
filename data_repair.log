@@ -1,0 +1,89 @@
+Checking for inconsistencies in the training data.
+
+Inconsistent values found:
+
+   Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 333       Gd       TA           No          GLQ           NA        3206
+2 949       Gd       TA           NA          Unf          Unf         936
+
+After repair attempt:
+
+   Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 333       Gd       TA           No          GLQ         <NA>        3206
+2 949       Gd       TA         <NA>          Unf          Unf         936
+
+Checking for inconsistencies in the test data.
+
+Inconsistent values found:
+
+    Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 1488       Gd       TA           NA          Unf          Unf        1595
+2 2041       Gd       NA           Mn          GLQ          Rec        1426
+3 2121       NA       NA           NA           NA           NA          NA
+4 2186       TA       NA           No          BLQ          Unf        1127
+5 2218       NA       Fa           No          Unf          Unf         173
+6 2219       NA       TA           No          Unf          Unf         356
+7 2349       Gd       TA           NA          Unf          Unf         725
+8 2525       TA       NA           Av          ALQ          Unf         995
+
+After repair attempt:
+
+    Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 1488       Gd       TA         <NA>          Unf          Unf        1595
+2 2041       Gd     <NA>           Mn          GLQ          Rec        1426
+3 2121       NA       NA           NA           NA           NA          NA
+4 2186       TA     <NA>           No          BLQ          Unf        1127
+5 2218     <NA>       Fa           No          Unf          Unf         173
+6 2219     <NA>       TA           No          Unf          Unf         356
+7 2349       Gd       TA         <NA>          Unf          Unf         725
+8 2525       TA     <NA>           Av          ALQ          Unf         995
+
+Inconsistent values found:
+
+    Id GarageFinish GarageQual GarageCond GarageType GarageYrBlt GarageCars GarageArea
+1 2127           NA         NA         NA     Detchd          NA          1        360
+2 2577           NA         NA         NA     Detchd          NA         NA         NA
+
+After repair attempt:
+
+    Id GarageFinish GarageQual GarageCond GarageType GarageYrBlt GarageCars GarageArea
+1 2127           NA         NA         NA     Detchd          NA          1        360
+2 2577           NA         NA         NA     Detchd          NA         NA         NA
+
+Inconsistent values found:
+
+    Id PoolQC PoolArea
+1 2421     NA      368
+2 2504     NA      444
+3 2600     NA      561
+
+After repair attempt:
+
+    Id PoolQC PoolArea
+1 2421   <NA>      368
+2 2504   <NA>      444
+3 2600   <NA>      561
+
+Executing ad hoc repairs.
+
+ Before ad hoc repair of test data for basement:
+
+    Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 2121       NA       NA           NA           NA           NA          NA
+
+After ad hoc repair of test data for basement:
+
+    Id BsmtQual BsmtCond BsmtExposure BsmtFinType1 BsmtFinType2 TotalBsmtSF
+1 2121       NA       NA           NA           NA           NA           0
+
+Before ad hoc repair of test data for garage:
+
+    Id GarageFinish GarageQual GarageCond GarageType GarageYrBlt GarageCars GarageArea
+1 2127           NA         NA         NA     Detchd          NA          1        360
+2 2577           NA         NA         NA     Detchd          NA         NA         NA
+
+After ad hoc repair of test data for garage:
+
+    Id GarageFinish GarageQual GarageCond GarageType GarageYrBlt GarageCars GarageArea
+1 2127         <NA>       <NA>       <NA>     Detchd          NA          1        360
+2 2577           NA         NA         NA         NA          NA          0          0
