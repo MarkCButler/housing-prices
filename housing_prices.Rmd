@@ -43,7 +43,8 @@ The work develops two models for predicting the sale price of houses in the
 [Ames Housing Dataset](http://www.amstat.org/publications/jse/v19n3/decock.pdf):
 
   - A multilinear model that aims to give insight into the housing market
-  - A (to-be-determined, probably tree-based) model that aims for predictive accuracy
+  - A (to-be-determined, probably tree-based) model that aims for predictive
+    accuracy
 
 # Exploratory data analysis / feature engineering
 
@@ -54,17 +55,14 @@ Feature engineering was done in an iterative process.
   - Variables were transformed and/or new variables were defined to try to
     enhance linear associations visible in the plots.
 
-Outcome:
-
-  1. The target (SalePrice) and one predictor (GrLivArea: Above ground living
-     area) were both transformed using the logarithm.
-  2. The predictors YearBuilt and GarageYrBlt were transformed using the
-     function $f(x) = (x - 1900)^3$.
-
-
 ## Missing data {.tabset}
 
 ### Summary {.unnumbered}
+
+After preprocessing that repairs some inconsistencies in the data, display the
+count of missing values for individual variables.
+
+### Discussion {.unnumbered}
 
 From the variable descriptions provided in *data_description.txt*, "NA" is a
 valid category for certain columns.
@@ -75,7 +73,9 @@ in variables where it represents a valid category.
   - Example:  The description of variable BsmtExposure has "NA" indicating "No
     Basement".  But the house with Id 949 has "NA" for BsmtExposure in spite
     of the fact that BsmtQual is "Good", BsmtCond is "Typical", and
-    TotalBsmtSF ("Total square feet of basement area") is 936.
+    TotalBsmtSF ("Total square feet of basement area") is 936.  For this house,
+    the "NA" for BsmtExposure likely indicates a missing value rather than "No
+    Basement."
 
 The script *preprocess.R* attempts to repair inconsistencies and replace "NA"
 by a string such as "NB" for "No Basement" in cases where it represented a
@@ -133,7 +133,11 @@ get_datatable(combined_na_counts)
 
 ### Summary {.unnumbered}
 
-The tabs show the distribution of each variable.
+Apply transformations and plot the distribution of each variable.
+
+### Discussion {.unnumbered}
+
+The distribution of each variable is plotted.
 
   - Numeric predictors with only a few values are labeled as discrete, while
     those with many values are labeled as continuous.
@@ -400,9 +404,13 @@ for (variable_name in continuous_predictors) {
 
 ### Summary {.unnumbered}
 
-ANOVA ($\eta^2$) is used for nominal predictors.
+Show the fraction of variance in the sale price explained by individual
+predictors.
 
-$R^2$ is used for numeric predictors.
+### Discussion {.unnumbered}
+
+ANOVA ($\eta^2$) is used for nominal predictors, and $R^2$ is used for numeric
+predictors.
 
 For many of the predictors that individually explain the largest fraction of
 variance, the value of $\eta^2$ or $R^2$ was increased by the transformations.
@@ -499,6 +507,10 @@ get_datatable(r_squared_df) %>%
 ## Plots of sale price vs individual predictors {#association-plots .tabset}
 
 ### Summary {.unnumbered}
+
+Visualize the dependence of sale price on individual predictors.
+
+### Discussion {.unnumbered}
 
 Predictors with large $\eta^2$ or $R^2$ are plotted against sale price.
 
@@ -671,6 +683,10 @@ $\eta^2$ or $R^2$.
 
 #### Summary {.unnumbered}
 
+Enhance the linear dependence of sale price on individual numeric predictors.
+
+#### Discussion {.unnumbered}
+
 For certain scatter plots, the fit appears distorted by outliers and/or by
 the points at the vertical intercept.
 
@@ -751,8 +767,8 @@ names(dummy_filters) <- original_predictors
 # strings to use for dropping outliers in evaluating the fit of individual
 # variables.
 outlier_formulas <- c(
-    GrLivArea = '>= 8.45',
-    GarageArea = '>= 1248',
+    GrLivArea = '>= log(4500)',
+    GarageArea = '>= 1240',
     TotalBsmtSF = '>= 3000',
     BsmtFinSF1 = '>= 3000',
     SecondFlrSF = '> 3000',
@@ -867,5 +883,91 @@ for (variable_name in r_squared_changes[['original model']]) {
 
 #### Summary {.unnumbered}
 
-Replace nominal variables by numerical rankings in cases where the box plot
-has a strongly linear profile.
+Use one of three schemes to encode each nominal variable that explains a
+significant fraction of the variance in the sale price.
+
+#### Discussion {.unnumbered}
+
+Three schemes for encoding categories as numbers:  one-hot, ordinal, target.
+
+  1.  One-hot encoding creates dummy variables for individual categories of a
+      predictor.  When many different categories are present, the increase in
+      model complexity may be a problem.
+
+  2.  Ordinal encoding replaces categories by natural numbers 1, 2, etc.
+      This simple encoding may not give a linear relation between predictor and
+      target.
+
+  3.  Target encoding encodes each category by the mean of the values for that
+      category.  This method is prone to overfitting, although variants designed
+      to minimize overfitting have been developed.
+
+#### $R^2$ {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, encode, cache=FALSE}
+
+
+# For these predictors, the profile of the box plot is roughly linear, so
+# it is natural to try ordinal encoding.
+encode_ordinal <- c(
+    'Neighborhood', 'ExterQual', 'KitchenQual', 'GarageFinish',
+    'GarageType', 'MSSubClass', 'FireplaceQu', 'Foundation',
+    'HeatingQC', 'MasVnrType', 'BsmtExposure', 'CentralAir',
+    'Electrical', 'PavedDrive'
+)
+
+# The profile of the box plot shows distinct differents in the sale price
+# between categories, but the profile is not linear.
+encode_target <- c(
+    'BsmtQual', 'Exterior1st', 'MSZoning', 'Exterior2nd',
+    'GarageCond', 'GarageQual', 'SaleCondition', 'SaleType',
+    'BsmtCond'
+)
+
+# From the box plot, most of the categories appear not to effect the sale price.
+# For these variables, it appears more efficient to convert each category to a
+# dummy variable, so that the categories that do not significantly affect the
+# sale price can be eliminated from the model.
+encode_one_hot <- c('BsmtFinType1', 'HouseStyle', 'LotShape')
+```
+
+</div>
+
+#### Scatter plots {.tab-display .unnumbered}
+
+```{r scatter-plots-encoded, cache=FALSE}
+```
+
+### Outcome of feature engineering {.tabset}
+
+#### Summary {.unnumbered}
+
+List the changes applied to variables in the original data set.
+
+#### Details {.unnumbered}
+
+Changes to the variables:
+
+  1. The target (SalePrice) and one predictor (GrLivArea: Above ground living
+     area) were both transformed using the logarithm.
+  2. The predictors YearBuilt and GarageYrBlt were transformed using the
+     function $f(x) = (x - 1900)^3$.
+  3. Dummy variables NoBasement, NoGarage, NoFireplace, NoSecondFloor were
+     defined in order to eliminate distortions in the fit for related numeric
+     variables.
+  4. Outliers for individual numeric predictors were defined.
+  5. Each nominal variable with large $\eta^2$ was encoded using one of three
+     schemes:  one-hot, ordinal, target.
+
+## Are the predictors independent? {.tabset}
+
+### Summary {.unnumbered}
+
+Display a table of correlations between predictors as an aid to tuning the
+multilinear model.
+
+### Correlations {.tab-display .unnumbered}
+
+# Multilinear model
