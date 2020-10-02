@@ -35,6 +35,9 @@ library(purrr)
 library(rlang)
 library(scales)
 library(tidyr)
+
+source('descriptions.R')
+source('encode.R')
 ```
 
 # Summary
@@ -89,7 +92,6 @@ valid category.
 <div class="code-block">
 
 ```{r, missing-data, cache=FALSE}
-source('descriptions.R')
 read_data <- function(file) {
     data <- read.csv(file, stringsAsFactors = FALSE)
     return(data)
@@ -186,6 +188,7 @@ cat('transformation:  ', 'price -> log(price)', '\n\n')
 ```
 
 </div>
+
 ### Discrete predictors {.tab-display .unnumbered}
 
 <div class="code-block">
@@ -533,26 +536,35 @@ the transformations.
 ```{r, large-eta, cache=FALSE, echo=FALSE}
 large_eta_squared <- filter(eta_squared_df, `eta squared` >= 0.085)
 
-```
+generate_box_plot <- function(variable_name, eta_squared,
+                              show_encoding = FALSE) {
 
-```{r, show-large-eta, ref.label=c('large-eta', 'box-plots'), eval=FALSE}
-```
-
-```{r, box-plots, cache=TRUE, echo=FALSE}
-for (variable_name in large_eta_squared$name) {
-    eta_squared <- round(eta_squared_vec[variable_name], digits = 3)
     description <- variable_descriptions[[variable_name]]
-    to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
-        drop_na()
+    if (show_encoding) {
+        encoded_variable_name <- paste0(variable_name, 'Num')
+        vars <- c(variable_name, encoded_variable_name)
+        to_plot <- select(train_data, SalePrice, all_of(vars)) %>%
+            rename(encoding = .data[[encoded_variable_name]]) %>%
+            drop_na()
+    } else {
+        to_plot <- select(train_data, SalePrice, all_of(variable_name)) %>%
+            drop_na()
+    }
     to_plot[[variable_name]] <- as.factor(to_plot[[variable_name]]) %>%
         reorder(to_plot$SalePrice, median)
 
     plot_title <- paste0(variable_name, ', ', '$\\eta^2 = ', eta_squared, '$')
-    fig <- ggplot(to_plot, aes_string(x = variable_name, y = 'SalePrice')) +
-        geom_boxplot(aes_string(fill = variable_name)) +
-        scale_y_continuous(name = 'log(SalePrice)') +
+    fig <- ggplot(to_plot, aes_string(x = variable_name)) +
+        geom_boxplot(aes_string(y = 'SalePrice', fill = variable_name))
+    if (show_encoding) {
+        fig <- fig +
+            geom_point(aes(y = encoding, color = 'encoding')) +
+            scale_color_manual(name = variable_name,
+                               values = c('encoding' = 'red')) +
+            guides(fill = FALSE)
+    }
+    fig <- fig + scale_y_continuous(name = 'log(SalePrice)') +
         scale_x_discrete(name = variable_name) +
-        scale_fill_discrete(name = variable_name) +
         ggtitle(TeX(plot_title))
     fig <- set_label_angle(fig, to_plot[[variable_name]])
     print(fig)
@@ -567,6 +579,16 @@ for (variable_name in large_eta_squared$name) {
     print(fig)
 
     cat(description)
+}
+```
+
+```{r, show-large-eta, ref.label=c('large-eta', 'box-plots'), eval=FALSE}
+```
+
+```{r, box-plots, cache=TRUE, echo=FALSE}
+for (variable_name in large_eta_squared$name) {
+    eta_squared <- round(eta_squared_vec[variable_name], digits = 3)
+    generate_box_plot(variable_name, eta_squared)
 }
 ```
 
@@ -602,7 +624,6 @@ plot_simple_fit <- function(variable_name, linear_model, r_squared = 0) {
     # Scatter plot
     variable_label <- get_variable_label(variable_name)
     if (as.logical(r_squared)) {
-        r_squared <- round(r_squared_vec[variable_name], digits = 3)
         plot_title <- paste0(
             variable_label, ', ', '$R^2 = ', r_squared, '$'
         )
@@ -870,7 +891,7 @@ get_datatable(r_squared_changes) %>%
 ```{r, better-scatter-plots, cache=TRUE}
 for (variable_name in r_squared_changes[['original model']]) {
     bool_index <- r_squared_changes[['original model']] == variable_name
-    r_squared <- round(r_squared_changes[bool_index, 'original R squared'],
+    r_squared <- round(r_squared_changes[bool_index, 'updated R squared'],
                        digits = 3)
     linear_model <- linear_models[[variable_name]]
     plot_simple_fit(variable_name, linear_model, r_squared)
@@ -890,55 +911,73 @@ significant fraction of the variance in the sale price.
 
 Three schemes for encoding categories as numbers:  one-hot, ordinal, target.
 
-  1.  One-hot encoding creates dummy variables for individual categories of a
-      predictor.  When many different categories are present, the increase in
-      model complexity may be a problem.
+  - One-hot encoding creates dummy variables for individual categories of a
+    predictor.  When many different categories are present, the increase in
+    model complexity may be a problem.
 
-  2.  Ordinal encoding replaces categories by natural numbers 1, 2, etc.
-      This simple encoding may not give a linear relation between predictor and
-      target.
+  - Ordinal encoding replaces categories by natural numbers 1, 2, etc.  This
+    simple encoding may not give a linear relation between predictor and
+    target.
 
-  3.  Target encoding encodes each category by the mean of the values for that
-      category.  This method is prone to overfitting, although variants designed
-      to minimize overfitting have been developed.
+  - Target encoding encodes each category by the mean of the values for that
+    category.  This method is prone to overfitting, although variants designed
+    to minimize overfitting have been developed.  To minimize overfitting,
+    k-fold target encoding will be used.
 
-#### $R^2$ {.tab-display .unnumbered}
+Method of assigning an encoding scheme to each variable:
+
+  - Ordinal:  In cases where the profile of the box plot is roughly linear,
+    categories are ordered by the mean of the sale price, and the ordering is
+    used as an encoding.
+
+  - Target:  If the central values for categories are well separated but the
+    profile is not linear, the mean of each category is used as an encoding.
+
+  - One-hot:  When most of the categories appear not to effect the sale price,
+    it appears more efficient to convert each category to a dummy variable, so
+    that the categories that do not significantly affect the sale price can be
+    eliminated from the model.
+
+Encoding is needed for the multilinear model but should not be needed for a
+tree-based model.  Since the linear model should not be overly complex, only
+predictors with $\eta^2 \geq 0.2$ were considered for encoding.
+
+#### Visualize encodings {.tab-display .unnumbered}
 
 <div class="code-block">
 
-```{r, encode, cache=FALSE}
+```{r target-encode, cache=FALSE, echo=FALSE}
+# Encode all categorical predictors.
 
+# Convert MSSubClass to a character vector to simplify the encoding.  Note
+# that 'MSSubClass' is a factor vector, while the rest of the categorical
+# predictors are character vectors.  The reason that MSSubClass is handled
+# differently is that the variable is a scattered set of integers that
+# represent classes.  If this variable is converted to a character early in
+# the current script, the ordering of factors for plots is lexical, which
+# '190' coming before '20', which makes the plotted distribution of MSSubClass
+# harder to understand.  Converting it from an integer vector (imported by
+# read.csv) directly to a factor automatically gives factors ordered by
+# integer value in the distribution plot.
+train_data <- mutate(train_data, MSSubClass = as.character(MSSubClass))
 
-# For these predictors, the profile of the box plot is roughly linear, so
-# it is natural to try ordinal encoding.
-encode_ordinal <- c(
-    'Neighborhood', 'ExterQual', 'KitchenQual', 'GarageFinish',
-    'GarageType', 'MSSubClass', 'FireplaceQu', 'Foundation',
-    'HeatingQC', 'MasVnrType', 'BsmtExposure', 'CentralAir',
-    'Electrical', 'PavedDrive'
-)
+for (variable_name in categorical_predictors) {
+    train_data <- encode(train_data, variable_name)
+}
 
-# The profile of the box plot shows distinct differents in the sale price
-# between categories, but the profile is not linear.
-encode_target <- c(
-    'BsmtQual', 'Exterior1st', 'MSZoning', 'Exterior2nd',
-    'GarageCond', 'GarageQual', 'SaleCondition', 'SaleType',
-    'BsmtCond'
-)
+```
 
-# From the box plot, most of the categories appear not to effect the sale price.
-# For these variables, it appears more efficient to convert each category to a
-# dummy variable, so that the categories that do not significantly affect the
-# sale price can be eliminated from the model.
-encode_one_hot <- c('BsmtFinType1', 'HouseStyle', 'LotShape')
+```{r show-encoded, ref.label=c('target-encode', 'check-encoding'), eval=FALSE}
+```
+
+```{r check-encoding, cache=TRUE, echo=FALSE}
+for (variable_name in large_eta_squared$name) {
+    eta_squared <- round(eta_squared_vec[variable_name], digits = 3)
+    generate_box_plot(variable_name, eta_squared, show_encoding = TRUE)
+}
 ```
 
 </div>
-
-#### Scatter plots {.tab-display .unnumbered}
-
-```{r scatter-plots-encoded, cache=FALSE}
-```
 
 ### Outcome of feature engineering {.tabset}
 
@@ -960,6 +999,27 @@ Changes to the variables:
   4. Outliers for individual numeric predictors were defined.
   5. Each nominal variable with large $\eta^2$ was encoded using one of three
      schemes:  one-hot, ordinal, target.
+
+### Additional possibilities for feature engineering {.tabset}
+
+#### Summary {.unnumbered}
+
+Discuss additional feature engineering that could lead to an improved linear
+model.
+
+#### Discussion {.unnumbered}
+
+New variables could be defined by eliminating poorly sampled discrete values.
+
+  - Example:  There are only a few houses in the training data with GarageCars
+    equal to 4, and these houses all have a price lower than that predicted by
+    the linear fit.  The model would likely be improved by merging the values
+    3 and 4 in GarageCares, i.e., using the value 3 to represent all houses
+    with 3 or more cars.
+
+Different methods of encoding categorical variables could be explored, with
+the choice determined by cross validation for a particular model.
+
 
 ## Are the predictors independent? {.tabset}
 
