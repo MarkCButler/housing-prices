@@ -30,9 +30,13 @@ sigmoid <- function(x, center) {
 # Perform k-fold target encoding for the training data.
 encode <- function(data, variable_name, k = 5, sigmoid_center = 5) {
     # To simplify dplyr commands, rename the column of categorical data to be
-    # encoded.
+    # encoded.  Also replace NA by the string "missing" to simplify the
+    # encoding process.
     to_encode <- select(data, SalePrice, all_of(variable_name)) %>%
-        rename(category = .data[[variable_name]])
+        rename(category = .data[[variable_name]]) %>%
+        mutate(
+            category = replace(category, is.na(category), 'missing')
+        )
 
     encoded <- as.numeric(rep(NA, nrow(to_encode)))
 
@@ -53,9 +57,14 @@ encode <- function(data, variable_name, k = 5, sigmoid_center = 5) {
                       .groups = 'drop') %>%
             right_join(k_fold_encodings['category'], by = 'category') %>%
             replace_na(na_replacements) %>%
-            mutate(out_of_fold_weight = sigmoid(count, sigmoid_center),
-                   value = out_of_fold_weight * out_of_fold_mean +
-                       (1 - out_of_fold_weight) * target_mean) %>%
+            mutate(
+                out_of_fold_weight = sigmoid(count, sigmoid_center),
+                value = out_of_fold_weight * out_of_fold_mean +
+                       (1 - out_of_fold_weight) * target_mean
+            ) %>%
+            mutate(
+                value = replace(value, category == 'missing', target_mean)
+            ) %>%
             select(category, value)
 
         k_fold_encodings <- full_join(k_fold_encodings, encoding,
@@ -73,7 +82,7 @@ encode <- function(data, variable_name, k = 5, sigmoid_center = 5) {
     names(to_save) <- variable_name
     variable_encodings <<- c(variable_encodings, to_save)
 
-    encoded_variable_name <- paste0(variable_name, 'num')
+    encoded_variable_name <- paste0(variable_name, 'Num')
     data[[encoded_variable_name]] <- encoded
     return(data)
 }
