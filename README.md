@@ -16,3 +16,5 @@ Two models are developed:
 
 The script *preprocess.R* is used to repair some inconsistencies in the data,
 and the resulting log file *data_repair.log* is included in the repo.
+Functions for K-fold target encoding of the categorical variables are defined
+in the script *encode.R*.

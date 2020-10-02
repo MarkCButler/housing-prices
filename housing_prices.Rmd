@@ -558,9 +558,9 @@ generate_box_plot <- function(variable_name, eta_squared,
         geom_boxplot(aes_string(y = 'SalePrice', fill = variable_name))
     if (show_encoding) {
         fig <- fig +
-            geom_point(aes(y = encoding, color = 'encoding')) +
+            geom_point(aes(y = encoding, color = 'encodings')) +
             scale_color_manual(name = variable_name,
-                               values = c('encoding' = 'red')) +
+                               values = c('encodings' = 'red')) +
             guides(fill = FALSE)
     }
     fig <- fig + scale_y_continuous(name = 'log(SalePrice)') +
@@ -697,9 +697,6 @@ for (variable_name in large_r_squared$name) {
 The goal is to define simple features that have a strong linear association
 with the target.
 
-The starting point for the process is the set of predictors that have large
-$\eta^2$ or $R^2$.
-
 ### Define dummy variables, exclude outliers {.tabset}
 
 #### Summary {.unnumbered}
@@ -708,6 +705,9 @@ Enhance the linear dependence of sale price on individual numeric predictors.
 
 #### Discussion {.unnumbered}
 
+The starting point for the process is the set of predictors that have large
+$R^2$.
+
 For certain scatter plots, the fit appears distorted by outliers and/or by
 the points at the vertical intercept.
 
@@ -715,8 +715,8 @@ Distortions due to the vertical intercept can be eliminated by defining a
 dummy variable.
 
   - Example:  A dummy variable NoBasement that identifies houses without a
-    basement was defined order to avoid distortions in the fit for variables
-    that characterize basement area.
+    basement was defined in order to avoid distortions in the fit for
+    variables that characterize basement area.
 
 With outliers excluded and appropriate dummy variables defined, $R^2$
 increased and the fit shown in scatter plots improved.
@@ -904,43 +904,30 @@ for (variable_name in r_squared_changes[['original model']]) {
 
 #### Summary {.unnumbered}
 
-Use one of three schemes to encode each nominal variable that explains a
-significant fraction of the variance in the sale price.
+Apply $k$-fold target encoding to each nominal variable.
 
 #### Discussion {.unnumbered}
 
-Three schemes for encoding categories as numbers:  one-hot, ordinal, target.
+Target encoding encodes each category by the mean of the target values for
+that category.  
 
-  - One-hot encoding creates dummy variables for individual categories of a
-    predictor.  When many different categories are present, the increase in
-    model complexity may be a problem.
+This method is prone to overfitting, but variants have been developed to
+minimize overfitting:
 
-  - Ordinal encoding replaces categories by natural numbers 1, 2, etc.  This
-    simple encoding may not give a linear relation between predictor and
-    target.
+  - $K$-fold target encoding randomly separates the training data into $k$ folds.
+    Samples in a given fold are encoded using data not in that fold.
+  - For categories with a small number of samples, the encoding is a mix of
+    the category target mean and the global target mean.
 
-  - Target encoding encodes each category by the mean of the values for that
-    category.  This method is prone to overfitting, although variants designed
-    to minimize overfitting have been developed.  To minimize overfitting,
-    k-fold target encoding will be used.
+Five folds were used here, and the weighting of the global target mean was
+given by a sigmoid function that increased from $\approx 0$ to $\approx 1$ as
+the number of samples in the category increased from 0 to 10.
 
-Method of assigning an encoding scheme to each variable:
+For each sample in the test data, the encoding used for a given category was
+randomly selected from the five encodings obtained from the training data. 
 
-  - Ordinal:  In cases where the profile of the box plot is roughly linear,
-    categories are ordered by the mean of the sale price, and the ordering is
-    used as an encoding.
+Missing values were encoded using the global target mean.
 
-  - Target:  If the central values for categories are well separated but the
-    profile is not linear, the mean of each category is used as an encoding.
-
-  - One-hot:  When most of the categories appear not to effect the sale price,
-    it appears more efficient to convert each category to a dummy variable, so
-    that the categories that do not significantly affect the sale price can be
-    eliminated from the model.
-
-Encoding is needed for the multilinear model but should not be needed for a
-tree-based model.  Since the linear model should not be overly complex, only
-predictors with $\eta^2 \geq 0.2$ were considered for encoding.
 
 #### Visualize encodings {.tab-display .unnumbered}
 
@@ -962,6 +949,7 @@ predictors with $\eta^2 \geq 0.2$ were considered for encoding.
 train_data <- mutate(train_data, MSSubClass = as.character(MSSubClass))
 
 for (variable_name in categorical_predictors) {
+    # The encode function is defined in the script encode.R.
     train_data <- encode(train_data, variable_name)
 }
 
@@ -997,8 +985,11 @@ Changes to the variables:
      defined in order to eliminate distortions in the fit for related numeric
      variables.
   4. Outliers for individual numeric predictors were defined.
-  5. Each nominal variable with large $\eta^2$ was encoded using one of three
-     schemes:  one-hot, ordinal, target.
+  5. Each nominal variable in the training set was encoded using $k$-fold
+     target encoding with $k=5$.  For categories with $<10$ samples, a sigmoid
+     function mixed the global target mean with the category target mean to
+     give the encoding.  As a natural extension of this step, missing
+     categorical data was encoded with the global target mean.
 
 ### Additional possibilities for feature engineering {.tabset}
 
@@ -1017,9 +1008,12 @@ New variables could be defined by eliminating poorly sampled discrete values.
     3 and 4 in GarageCares, i.e., using the value 3 to represent all houses
     with 3 or more cars.
 
-Different methods of encoding categorical variables could be explored, with
-the choice determined by cross validation for a particular model.
+Methods of encoding categorical variables could be more fully explored using
+cross validation for a particular model.
 
+  - Example:  For k-fold target encoding, cross-validation could be used to
+    tune the number of folds as well as the weight given to the global target
+    mean for categories with a small number of samples.
 
 ## Are the predictors independent? {.tabset}
 
