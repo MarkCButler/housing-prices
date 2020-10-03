@@ -117,12 +117,15 @@ combined_na_counts <- rbind(na_counts_test, na_counts_train,
 
 # The same (complicated) set of options can be used with DT::datatable
 # throughout this file.  A function wrapper is defined for this.
-get_datatable <- function(data) {
+get_datatable <- function(data, page_length = 20) {
     table_alignment <- list(className = 'dt-center', targets = '_all')
     table_with_options <- datatable(
         data,
         rownames = FALSE,
-        options = list(columnDefs = list(table_alignment), digits = 3)
+        options = list(
+            columnDefs = list(table_alignment),
+            pageLength = page_length
+         )
     )
     return(table_with_options)
 }
@@ -909,7 +912,7 @@ Apply $k$-fold target encoding to each nominal variable.
 #### Discussion {.unnumbered}
 
 Target encoding encodes each category by the mean of the target values for
-that category.  
+that category.
 
 This method is prone to overfitting, but variants have been developed to
 minimize overfitting:
@@ -924,7 +927,7 @@ given by a sigmoid function that increased from $\approx 0$ to $\approx 1$ as
 the number of samples in the category increased from 0 to 10.
 
 For each sample in the test data, the encoding used for a given category was
-randomly selected from the five encodings obtained from the training data. 
+randomly selected from the five encodings obtained from the training data.
 
 Missing values were encoded using the global target mean.
 
@@ -1022,6 +1025,43 @@ cross validation for a particular model.
 Display a table of correlations between predictors as an aid to tuning the
 multilinear model.
 
+### Discussion {.unnumbered}
+
+A correlation matrix was calculated that included the following 45 predictors:
+
+  - Numeric predictors with large $R^2$.
+  - Encoded versions of categorical predictors with large $\eta^2$.
+
+In the table, correlations are presented in order of decreasing magnitude.
+
+Many of the predictors that have a strong linear association with the target
+are also strongly correlated with other predictors.
+
 ### Correlations {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, correlations, cache=FALSE}
+linear_predictors <- c(large_r_squared$name,
+                       paste0(large_eta_squared$name, 'Num'))
+
+corr_matrix <- select(train_data, all_of(linear_predictors)) %>%
+    cor(use = 'pairwise.complete.obs')
+# Set to NA the upper triangular part of the correlation matrix.
+bool_index <- lower.tri(corr_matrix, diag = TRUE)
+corr_matrix[bool_index] <- NA
+
+correlations <- as.data.frame(corr_matrix) %>%
+    mutate(var_1 = rownames(.)) %>%
+    pivot_longer(-var_1, names_to = 'var_2', values_to = 'corr') %>%
+    filter(!is.na(corr)) %>%
+    arrange(desc(abs(corr))) %>%
+    rename(`predictor 1` = var_1, `predictor 2` = var_2,
+           correlation = corr)
+get_datatable(correlations) %>%
+    formatRound(columns = 'correlation', digits = 3)
+```
+
+ </div>
 
 # Multilinear model
