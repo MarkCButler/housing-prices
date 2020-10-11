@@ -80,6 +80,13 @@ a {
     background-color: Gainsboro;
 }
 
+div.sourceCode {
+	background-color: Gainsboro;
+}
+
+.sourceCode.r {
+	background-color: #f8f8f8;
+}
 /*************************************************************
  * End of rules to get a slate-style theme.
  ************************************************************/
