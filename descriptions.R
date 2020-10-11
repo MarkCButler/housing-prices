@@ -1,3 +1,6 @@
+library(purrr)
+library(stringr)
+
 # This file was created by modifying the file data_description.txt that came
 # with the data set.  Two vim macros were used to convert the file to
 # an R command that generates a list of variable descriptions.
@@ -482,5 +485,38 @@ variable_descriptions <- list(
        Partial  Home was not completed when last assessed
                 (associated with New Homes)',
     # Include a description of the sales price in order to simplify plot generation.
-    SalesPrice = 'Sale Price'
+    SalesPrice = 'Sale Price',
+    NoBasement = 'NoBasement:  Does the house have a basement'
 )
+
+# Define short descriptions by extracting the one-line summaries.
+short_descriptions <- map(
+    variable_descriptions,
+    ~ str_trim(str_extract(., '^.*\\n\\n'), side = 'right'
+))
+short_descriptions <- ifelse(
+    is.na(short_descriptions),
+    variable_descriptions,
+    short_descriptions
+)
+
+# Define a comment (by default an empty string) for each predictor.
+comments <- map(variable_descriptions, '')
+comments['GrLivArea'] <- 'The log of sale price varies linearly with the log of living area.'
+comments['Functional'] <- paste0(
+    'Any drop below typical functionality causes a drop in price, but\n',
+    '    the data does not show a clear dependence of price on the level\n',
+    '    of functionality loss.')
+comments['Condition1'] <- paste0(
+    'Being near or adjacent to a park, greenbelt, etc gives a boost\n',
+    '    in price, while being adjacent to a feeder street or arterial street\n',
+    '    gives a drop in price.  Research is needed to clarify the way\n',
+    '    in which proximity to railroads affects price.')
+comments['MSZoning'] <- paste0(
+    'Most houses are in a low-density residential zone.  Houses in a\n',
+    '    "Floating Village" residential zone get a boost in price, while\n',
+    '    houses in medium- or high-density residential zones get a price\n',
+    '    penalty.  Houses in commercial zones get a substantial price penalty.')
+comments['SaleCondition'] <- paste0(
+    'Houses with an abnormal sale take a price penalty, while new homes\n',
+    '    in the Partial category have a price boost.')
