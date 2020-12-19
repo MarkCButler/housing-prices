@@ -1,0 +1,629 @@
+---
+title: 'Data analytics for the Ames Housing Dataset'
+output:
+  html_document:
+    code_folding: hide
+    css: style.css
+    highlight: tango
+    number_sections: true
+    theme: yeti
+    toc: true
+    toc_depth: 2
+editor_options:
+  chunk_output_type: console
+---
+
+```{js, echo = FALSE}
+// Add the Kaggle competition banner to the top of the page.
+let banner_html = '<img id="banner" src="images/housesbanner.png" alt="Banner">';
+header = document.getElementById('header');
+header.innerHTML = banner_html + header.innerHTML;
+```
+
+```{r, setup, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    fig.align = 'center',
+    comment = NA
+)
+
+library(car)
+library(caret)
+library(dplyr)
+library(DT)
+library(glmnet)
+library(ggplot2)
+library(latex2exp)
+library(purrr)
+library(randomForest)
+library(rlang)
+library(scales)
+library(stringr)
+library(tidyr)
+
+source('descriptions.R')
+source('encode.R')
+```
+
+# Random-forest model
+
+Test whether a random-forest model can improve accuracy.
+
+## Feature selection {.tabset}
+
+### Summary {.unnumbered}
+
+Define two feature sets for which hyperparameters will be tuned.
+
+### Discussion {.unnumbered}
+
+For the multilinear model, stepwise regression was used to select important
+variables, and highly correlated predictors were eliminated with lasso
+regression.  Can a similar approach be used for the random-forest model?
+
+A process inspired by stepwise regression was used to select a feature set for
+the random-forest model, with the least important variable eliminated during
+each successive iteration.
+
+A natural next step would be to remove highly correlated features from the
+feature set.  As a simple alternative to developing an algorithm to do this,
+the features obtained for the multilinear model were tested in a random-forest
+model.
+
+  - The predictor 'NoBasement' was not included in the random-forest model.
+    The reason is that 'NoBasement' was added specifically in order to
+    decrease distortions in a linear fit, which is not significant for a
+    random forest.
+
+### Method {.unnumbered}
+
+Prepare data:
+
+  - Categorical variables were encoded using the method developed for the
+    multilinear model.
+
+  - The variables LotFrontage and MasVnrArea were dropped, since these
+    variables each contain a relatively large number of missing values.
+
+  - A few numeric variables in the test data had one or two missing values,
+    and these were imputed using the mean.
+
+Before beginning the stepwise process of feature selection, determine how
+large ntree needs to be to give stable results:
+
+  - Both root-mean-square logarithmic error (RMSLE) and feature importance
+    (evaluated by permuting predictor variables) should be stable.
+  - A loop over values of ntree was performed using a model that included all
+    predictors remaining after data preparation.  The choice of
+    least-important feature was the same for all values of ntree $\geq 5000$.
+    Changes in RMSLE as ntree was increased above 5000 were negligible.
+
+Starting from a random-forest model that includes the 77 predictors remaining
+after data preparation, eliminate predictors in a stepwise process:
+
+  - At each step, find the optimal value of mtry for a random forest that
+    includes all of the remaining predictors.  (In practice, the optimal value
+    from a set of 11 tested values was found.)
+  - Find the RMSLE for the model with the optimal value of mtry.  Note that
+    the predictions used to calculate RMSLE are based on out-of-bag samples.
+  - Sort the predictors based on variable importance and drop the least
+    important predictor.
+
+A plot of RMSLE vs number of features showed a nearly linear pattern of
+decreasing error as the number of features dropped from 77 to 38.  The set of
+38 features that gave the minimum was was selected for the model.
+
+  - The drop in RMSLE due to the process of feature selection was only 1.8%.
+
+### Outcome {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, show-rf-features, ref.label=c('setup-tree', 'rf-features'), eval=FALSE}
+```
+
+```{r, setup-tree, cache=FALSE, echo=FALSE}
+# A fresh copy of the data will be used for the random-forest model.  In
+# preparation for redoing the target encoding, source 'encode.R' again to
+# reset variable_encodings to an empty list.
+source('encode.R')
+read_tree_data <- function(file) {
+    data <- read.csv(file, stringsAsFactors = FALSE,
+                     colClasses = c(MSSubClass = 'character'))
+    return(data)
+}
+
+preprocess_tree <- function(data, encoding_method = 'mean',
+                            outliers = NULL, drop_categorical = TRUE,
+                            verbose = FALSE) {
+    data <- select(data, -LotFrontage, -MasVnrArea)
+
+    if (!is.null(outliers)) {
+        data <- data %>%
+            filter(!(Id %in% outliers))
+    }
+
+    # The target encoding that was explored for the multilinear model used
+    # log(SalePrice), with the mean of log(SalePrice) given a weight for
+    # classes with a small number of samples.  In order to use the same
+    # encoding method, apply the log to SalePrice if it is present.
+    if ('SalePrice' %in% colnames(data)) {
+        data <- mutate(data, SalePrice = log(SalePrice))
+    }
+
+    # Impute missing values in numeric predictors.
+    data <- impute_data(data, verbose)
+
+    # Encode categorical variables.  Note that encodings assigned to are based
+    # on log(SalePrice), although transformations are not applied to any
+    # variables of the tree model
+    data <- encode_predictors(data, method = encoding_method,
+                              drop_categorical = drop_categorical)
+
+    return(data)
+}
+
+train_data <- preprocess_tree(read_tree_data('data/train.csv'))
+test_data <- preprocess_tree(read_tree_data('data/test.csv'))
+
+all_tree_predictors <- setdiff(colnames(test_data), 'Id')
+
+rf_features_from_lm <- setdiff(best_lm_predictors, 'NoBasement')
+
+```
+
+```{r, rf-features, cache=FALSE, echo=FALSE}
+# Function to generate a random forest model using the training data.
+run_rf <- function(predictors, ...) {
+    x_data <- select(train_data, all_of(predictors))
+    y_data <- train_data$SalePrice
+    rf_model <- randomForest(x = x_data, y = y_data, importance = TRUE, ...)
+    return(rf_model)
+}
+
+# Get a vector ordered by decreasing importance, where importance is evaluated
+# by permuting predictor variables.
+get_importance <- function(model) {
+    importance_vec <- sort(
+        importance(model)[, '%IncMSE'],
+        decreasing = TRUE
+    )
+    return(importance_vec)
+}
+
+get_rf_error <- function(model) {
+    rmsle <- get_rmsle(model$predicted, train_data$SalePrice)
+    return(rmsle)
+}
+
+# For the random-forest model that includes all tree predictors, characterize
+# the number of trees needed, based on changes
+check_ntree <- FALSE
+if (check_ntree) {
+    ntree_vec <- c(500, seq(5000, 50000, by = 5000))
+    ntree_results <- list()
+    for (index in seq_along(ntree_vec)) {
+        ntree <- ntree_vec[index]
+        model <- run_rf(all_tree_predictors, ntree = ntree)
+        importance_vec <- get_importance(model)
+        error <- get_rf_error(model)
+
+        ntree_results[[index]] <- list(
+            ntree = ntree,
+            importance_vec = importance_vec,
+            error = error
+        )
+
+        filename <- paste0('importance_', ntree, '.txt')
+        sink(filename)
+        cat('RMSLE is:  ', error, '\n\nImportance:\n\n', sep = '')
+        print(importance_vec)
+        sink()
+    }
+}
+
+# For all values of ntree >= 5000, the least important variable was the same.
+# Improvements in rmsle for larger values of ntree were insignificant.
+ntree <- 5000
+
+# Encapsulate an individual step of eliminating the least important variable
+# into a function.
+drop_rf_feature <- function(features) {
+    number_of_features <- length(features)
+    cat('\nPerforming cross validation for a set of ',
+        number_of_features,
+        ' features.\n\n',
+        sep = '')
+
+    errors <- as.numeric(rep(1e6, number_of_features))
+    importance_vectors <- list()
+
+    default_mtry <- as.integer(number_of_features / 3)
+    mtry_start <- max(2, default_mtry - 5)
+    mtry_end <- min(number_of_features, default_mtry + 5)
+    mtry_range <- seq(mtry_start, mtry_end)
+    for (mtry in mtry_range) {
+        cat('Testing mtry = ', mtry, '.\n', sep = '')
+        model <- run_rf(features, ntree = ntree, mtry = mtry)
+        errors[mtry] <- get_rf_error(model)
+        importance_vectors[[mtry]] <- get_importance(model)
+        cat('Error = ', errors[mtry], '.\n\n', sep = '')
+    }
+
+    plot(mtry_range, errors[mtry_range], type = 'l')
+
+    index <- which.min(errors)
+    error <- errors[index]
+    importance_vec <- importance_vectors[[index]]
+
+    mtry_index <- which.min(errors[mtry_range])
+    cat('Selected mtry:  ', mtry_range[mtry_index],
+        '.\n\nImportance vector:\n\n', sep = '')
+    print(importance_vec)
+    dropped_feature <- tail(names(importance_vec), 1)
+    cat('\nDropped feature:  ', dropped_feature, '.\n\n', sep = '')
+    features <- setdiff(features, dropped_feature)
+    cat('Remaining features:\n\n')
+    print(features)
+    return(list(error = error, features = features))
+}
+
+select_features_rf <- FALSE
+if (select_features_rf) {
+    # Create the variables that will be updated in a loop.
+    remaining_features <- all_tree_predictors
+    number_of_features <- length(remaining_features)
+    feature_set_errors <- as.numeric(rep(NA, number_of_features))
+    feature_sets <- list()
+    feature_sets[[number_of_features]] <- all_tree_predictors
+
+    sink('select_rf_features.log', append = TRUE)
+    number_of_iterations <- 65
+    for (iteration in seq(1, number_of_iterations)) {
+        cv_result <- drop_rf_feature(remaining_features)
+        remaining_features <- cv_result$features
+        number_of_features <- length(remaining_features)
+        feature_set_errors[number_of_features + 1] <- cv_result$error
+        feature_sets[[number_of_features]] <- remaining_features
+    }
+    selected_index <- which.min(feature_set_errors)
+    rf_features_from_importance <- feature_sets[[selected_index]]
+    cat('\nAfter 65 iterations, the feature set with the lowest root-mean-',
+        'square logarithmic error\nusing out-of-bag samples for prediction ',
+        'is the following:\n\n', sep = '')
+    print(rf_features_from_importance)
+    sink()
+} else {
+    feature_set_errors <- c(
+        NA, NA, NA, NA, NA, NA,
+        NA, NA, NA, NA, NA, NA,
+        0.1344358, 0.1327722, 0.1333226, 0.1336695, 0.1337583, 0.1336552,
+        0.1338953, 0.1339020, 0.1339117, 0.1343086, 0.1338769, 0.1340653,
+        0.1341761, 0.1339882, 0.1333068, 0.1335836, 0.1332799, 0.1334367,
+        0.1334917, 0.1335227, 0.1338326, 0.1338394, 0.1330482, 0.1335071,
+        0.1325262, 0.1324736, 0.1326780, 0.1327063, 0.1327826, 0.1330062,
+        0.1329979, 0.1330804, 0.1333393, 0.1332839, 0.1333281, 0.1332639,
+        0.1335952, 0.1333970, 0.1334968, 0.1334317, 0.1332154, 0.1335923,
+        0.1334465, 0.1335458, 0.1337589, 0.1336664, 0.1337066, 0.1338819,
+        0.1338450, 0.1339195, 0.1337900, 0.1341650, 0.1341732, 0.1341367,
+        0.1340504, 0.1343846, 0.1343936, 0.1345957, 0.1345700, 0.1346031,
+        0.1345559, 0.1347084, 0.1345209, 0.1348670, 0.1348595
+    )
+    rf_features_from_importance <- c(
+        'LotArea', 'OverallQual', 'OverallCond', 'YearBuilt',
+        'YearRemodAdd', 'BsmtFinSF1', 'BsmtUnfSF', 'TotalBsmtSF',
+        'FirstFlrSF', 'SecondFlrSF', 'GrLivArea', 'BsmtFullBath',
+        'FullBath', 'HalfBath', 'BedroomAbvGr', 'TotRmsAbvGrd',
+        'Fireplaces', 'GarageYrBlt', 'GarageCars', 'GarageArea',
+        'OpenPorchSF', 'MSSubClassNum', 'MSZoningNum', 'NeighborhoodNum',
+        'HouseStyleNum', 'Exterior1stNum', 'Exterior2ndNum', 'ExterQualNum',
+        'BsmtQualNum', 'BsmtCondNum', 'BsmtExposureNum', 'BsmtFinType1Num',
+        'HeatingQCNum', 'CentralAirNum', 'KitchenQualNum', 'FireplaceQuNum',
+        'GarageTypeNum', 'GarageFinishNum'
+    )
+}
+
+plot(feature_set_errors,
+     col = 'navyblue',
+     pch = 19,
+     ylab = 'Error',
+     xlab = 'Number of features',
+     main = paste0('Root-mean-square logarithmic error\nduring stepwise ',
+                   'feature selection'))
+{
+    cat('After 65 iterations, the feature set with the lowest root-mean-',
+        'square logarithmic\nerror using out-of-bag samples for prediction ',
+        'is the following:\n\n', sep = '')
+    print(rf_features_from_importance)
+    cat('\n\nA second feature set that will be tested is obtained from ',
+        'the multilinear model,\nwith the dummy variable NoBasement excluded:',
+        '\n\n',
+        sep = '')
+    print(rf_features_from_lm)
+}
+```
+
+</div>
+
+## Tune the model {.tabset}
+
+### Summary {.unnumbered}
+
+Perform a grid search to tune the hyperparameters mtry and nodesize for each
+of the two feature sets.
+
+### Outcome {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, show-tune-rf, ref.label='tune-rf', eval=FALSE}
+```
+
+```{r, tune-rf, cache=FALSE, echo=FALSE}
+tune_rf_model <- function(predictors, nodesizes = NULL) {
+    number_of_features <- length(predictors)
+    default_mtry <- as.integer(number_of_features / 3)
+    mtry_range <- seq(default_mtry - 5, default_mtry + 5)
+    if (is.null(nodesizes)) {
+        nodesizes <- c(3, 5, 10)
+    }
+
+    errors <- matrix(nrow = length(mtry_range),
+                     ncol = length(nodesizes))
+    rownames(errors) <- mtry_range
+    colnames(errors) <- nodesizes
+
+    for (nodesize_index in seq_along(nodesizes)) {
+        nodesize <- nodesizes[nodesize_index]
+        cat('\nTesting nodesize = ', nodesize, '.\n\n', sep = '')
+
+        for (mtry_index in seq_along(mtry_range)) {
+            mtry <- mtry_range[mtry_index]
+            cat('Testing mtry = ', mtry, '.\n', sep = '')
+
+            model <- run_rf(predictors, ntree = ntree, mtry = mtry,
+                            nodesize = nodesize)
+            rmsle <- get_rf_error(model)
+            errors[mtry_index, nodesize_index] <- rmsle
+            cat('Error = ', rmsle, '.\n\n', sep = '')
+        }
+        plot(mtry_range,
+             errors[, nodesize_index],
+             type = 'l',
+             col = 'navyblue',
+             xlab = 'mtry',
+             ylab = 'Error',
+             main = paste0('Root-mean-square logarithmic error,\n',
+                           'nodesize = ',
+                           nodesize))
+    }
+    result <- list(errors = errors,
+                   nodesizes = nodesizes,
+                   mtry_range = mtry_range)
+    return(result)
+}
+
+tune_rf <- FALSE
+if (tune_rf) {
+    sink('tune_rf_model.log', append = TRUE)
+    result <- tune_rf_model(rf_features_from_importance)
+    errors <- result$errors
+    min_indices <- which(errors == min(errors), arr.ind = TRUE)
+    optimum_mtry <- result$mtry_range[min_indices[1]]
+    optimum_nodesize <- result$nodesizes[min_indices[2]]
+    min_error <- errors[min_indices]
+    cat('\n\nThe optimized choices are:\n\nmtry = ', optimum_mtry,
+        '\nnodesize = ', optimum_nodesize,
+        '\n\nThe minimum RMSLE is: ', min_error,
+        sep = '')
+    sink()
+}
+
+check_lm_features <- FALSE
+if (check_lm_features) {
+    sink('tune_rf_with_lm_features.log', append = TRUE)
+    result <- tune_rf_model(rf_features_from_lm, nodesizes = c(2, 3, 4))
+    errors <- result$errors
+    min_indices <- which(errors == min(errors), arr.ind = TRUE)
+    optimum_mtry <- result$mtry_range[min_indices[1]]
+    optimum_nodesize <- result$nodesizes[min_indices[2]]
+    min_error <- errors[min_indices]
+    cat('\n\nThe optimized choices are:\n\nmtry = ', optimum_mtry,
+        '\nnodesize = ', optimum_nodesize,
+        '\n\nThe minimum RMSLE is: ', min_error,
+        sep = '')
+    sink()
+}
+
+mtry_range <- seq(3, 13)
+errors <- c(
+    0.1355024, 0.1332273, 0.1317252, 0.1310732, 0.1307835, 0.1307519,
+    0.1307294, 0.1303224, 0.1307371, 0.1308829, 0.1313430
+)
+plot(mtry_range, errors,
+     type = 'l', col = 'navyblue',
+     xlab = 'mtry', ylab = 'Error',
+     main = 'Root-mean-square logarithmic error,\nnodesize = 3')
+points(mtry_range, errors,
+       pch = 19, col = 'navyblue')
+{
+    cat('The lowest RMLSE was obtained with mtry = 10, nodesize = 3 using the',
+        'set\nof features obtained from the multilinear model:\n\n')
+    print(rf_features_from_lm)
+}
+```
+
+</div>
+
+## Evaluate the model {.tabset}
+
+### Summary {.unnumbered}
+
+Examine model metrics, plots of residuals, and variable importance.
+
+### Discussion {.unnumbered}
+
+For the test data, the random-forest model had  RMSLE 4.4% larger than the
+multilinear model.
+
+  - Given the failure to improve on the accuracy of the multilinear model, it
+    is natural to ask whether the feature engineering and feature selection
+    for the random-forest model need to be improved.
+  - In essence, the multilinear model did better with a feature set selected
+    for it than the random-forest model did with almost the same feature set.
+  - However, it is also striking that for all feature sets and hyperparameters
+    tested, the RMSLE of the out-of-bag prediction was similar.
+
+Residuals:
+
+  - Most residuals are between -0.2 and 0.2, as in the multilinear model.
+  - Plotting residuals vs fitted values for the random-forest and
+    multilinear models clearly shows that the random-forest model does a much
+    better job of handling outliers.
+
+Although the two models have similar accuracy, the relative importance of the
+features is dramatically different in the models.
+
+  - For instance, in the multilinear model with standardized inputs,
+    TotalBsmtSF has a coefficient smaller than that of GrLivArea by a factor
+    of about 4000.  In the random-forest model, the importance score for
+    TotalBsmtSF is about 64% as large as for GrLivArea.
+
+Since the methods of evaluating importance for the two models are different,
+we don't really have an "apples to apples" comparison.  However, it is still
+interesting that the ordering of variable importance is dramatically different
+for the two models.
+
+### Model metrics {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, show-rf-score, ref.label='rf-score', eval=FALSE}
+```
+
+```{r, rf-score, cache=FALSE, echo=FALSE}
+rf_model_filename <- 'tuned_rf_model.Rds'
+if (!file.exists(rf_model_filename)) {
+    cat('Generating random-forest model.\n')
+    tuned_rf_model <- run_rf(rf_features_from_lm, ntree = ntree,
+                             mtry = 10, nodesize = 3)
+    saveRDS(tuned_rf_model, rf_model_filename)
+
+    predict_rf <- FALSE
+    if (predict_rf) {
+        x_data <- select(test_data, all_of(rf_features_from_lm))
+        rf_prediction <- exp(predict(tuned_rf_model,
+                                     newdata = x_data,
+                                     type = 'response'))
+        to_save <- data.frame(Id = test_data$Id, SalePrice = rf_prediction)
+        write.csv(to_save, 'data/rf_prediction.csv',
+                  row.names = FALSE, quote = FALSE)
+    }
+} else {
+    tuned_rf_model <- readRDS(rf_model_filename)
+}
+
+report_rf_metrics <- function(model) {
+    rmsle <- get_rmsle(model$predicted, train_data$SalePrice)
+    rmse <- get_rmse(model$predicted, train_data$SalePrice)
+    cat('root-mean-square error:  ', round(rmse, digits = 2),
+        '\nroot-mean-square logarithmic error:  ', round(rmsle, digits = 3),
+        '\n\n', sep = '')
+}
+{
+    cat('Error metrics for the training data (using out-of-bag samples for ',
+        'prediction):\n\n',
+        sep = '')
+    report_rf_metrics(tuned_rf_model)
+
+    cat('\nFor the test data set, the root-mean-square logarithmic ',
+        'error (RMSLE) was 0.13533.\n',
+        sep = '')
+
+    rf_error <- 0.13533
+    lm_error <- 0.12963
+    cat('\nThe random-forest model had  RMSLE ',
+        round((rf_error - lm_error) / lm_error * 100, digits = 1),
+        '% larger than the multilinear model.',
+        sep = '')
+
+}
+```
+
+</div>
+
+### Residuals {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, show-residuals, ref.label='residuals', eval=FALSE}
+```
+
+```{r, residuals, cache=TRUE, echo=FALSE}
+rf_residuals <- train_data$SalePrice - tuned_rf_model$predicted
+plot(tuned_rf_model$predicted,
+     rf_residuals,
+     col = 'navyblue',
+     ylab = 'Residual',
+     xlab = 'Fitted value',
+     xlim = c(10.4, 14.6),
+     main = 'Residuals of the tuned random-forest model')
+
+# Compare to the residuals for the multilinear model, with outliers included.
+plot(lm_result$predicted,
+     lm_result$residuals,
+     col = 'navyblue',
+     ylab = 'Residual',
+     xlab = 'Fitted value',
+     xlim = c(10.4, 14.6),
+     main = paste0('Residuals of the multilinear model\n',
+                   '(including outliers excluded during training)'))
+```
+
+</div>
+
+### Variable importance {.tab-display .unnumbered}
+
+<div class="code-block">
+
+```{r, show-rf-importance, ref.label='rf-importance', eval=FALSE}
+```
+
+```{r, rf-importance, cache=FALSE, echo=FALSE}
+compare_importance <- function() {
+    cat('Relative importance for the variables of the multilinear model:\n\n')
+    print(coef_relative_importance)
+    rf_importance <- get_importance(tuned_rf_model)
+    rf_importance <- rf_importance / rf_importance[1]
+    cat('\n\nRelative importance for the variables of the random-forest',
+        'model:\n\n')
+    print(rf_importance)
+}
+compare_importance()
+```
+
+</div>
+
+## Possible improvements {.tabset}
+
+### Summary {.unnumbered}
+
+Discuss ways in which the accuracy of the tree-based model could be improved.
+
+### Discussion {.unnumbered}
+
+Test gradient boosting as an alternative to the random forest algorithm.
+
+Extend the method of feature selection based on feature importance to include
+an algorithm for eliminating highly correlated predictors.
+
+Modify the training and prediction methods to include an average over random
+elements of the $k$-fold target encoding.
+
+  - The random elements can include both the selection of folds and the
+    selection of encodings assigned to test data.
+
+Check whether accuracy can be improved by using unencoded categorical
+variables.
+
+Test imputation methods for missing data.
