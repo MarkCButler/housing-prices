@@ -15,11 +15,11 @@ editor_options:
 
 ```{js, echo=FALSE}
 // Add the Kaggle competition banner to the top of the page.  JavaScript is
-// used because the formatting options for R markdown don't appear to include an
-// option to put the image above the document title.
-let banner_html = '<img id="banner" src="images/housesbanner.png" alt="Banner">';
+// used because the formatting options for R markdown don't appear to include
+// an option to put the image above the document title.
+let bannerHTML = '<img id="banner" src="images/housesbanner.png" alt="Banner">';
 header = document.getElementById('header');
-header.innerHTML = banner_html + header.innerHTML;
+header.innerHTML = bannerHTML + header.innerHTML;
 ```
 
 ```{r, setup, message=FALSE, include=FALSE}
@@ -52,8 +52,7 @@ The work develops two models for predicting the sale price of houses in the
 
   - A multilinear model that aims to give insight into the housing market
     represented by the dataset
-  - A tree-based model that aims to improve on the accuracy of the multilinear
-    model
+  - A nonlinear model that aims for predictive accuracy
 
 ## Primary variables of the multilinear model
 
@@ -244,8 +243,8 @@ cat('transformation:  price -> log(price)\n\n')
 <div class="code-block">
 
 ```{r, setup-distributions, cache=TRUE, echo=FALSE}
-# Given a vector of variable names, reorder the names to match the order used in
-# the original data set (i.e., in csv files and data_description.txt).
+# Given a vector of variable names, reorder the names to match the order used
+# in the original data set (i.e., in csv files and data_description.txt).
 all_column_names <- colnames(train_data)
 reorder_names <- function(variable_names) {
     reorder_index <- order(match(variable_names, all_column_names))
@@ -262,8 +261,8 @@ reorder_names <- function(variable_names) {
 # numeric.  Here 'continuous' is used for numeric variables containing many
 # values.
 
-# Note that MSSubClass is a nominal variable labeled with nonconsecutive integer
-# values, and it should be treated as categorical.
+# Note that MSSubClass is a nominal variable labeled with nonconsecutive
+# integer values, and it should be treated as categorical.
 train_data <- mutate(train_data, MSSubClass = as.factor(MSSubClass))
 categorical_predictors <- reorder_names(colnames(
     select(train_data, where(is.character), MSSubClass)
@@ -582,8 +581,8 @@ Visualize the dependence of sale price on individual predictors.
 Predictors with large $\eta^2$ or $R^2$ are plotted against sale price.
 
   - Here "large" is defined to mean $\gtrsim 0.1$.
-  - For both $\eta^2$ and $R^2$, there is a gap in the values at around 0.1, and
-    predictors falling above the gap are plotted.
+  - For both $\eta^2$ and $R^2$, there is a gap in the values at around 0.1,
+    and predictors falling above the gap are plotted.
   - Predictor distributions and descriptions are also shown.
 
 The linear profile of several of the predictors improved dramatically due to
@@ -991,8 +990,8 @@ the number of samples in the category increased from 0 to 10.
 The script *encode.R* created for this project supports two methods of encoding
 test data:
 
-  - Given an observation and the class for that observation, randomly select one
-    of the k encodings generated for the class.
+  - Given an observation and the class for that observation, randomly select
+    one of the k encodings generated for the class.
 
   - All observations of a given class receive the mean of the k encodings
     generated for the class.  This is the natural choice for a linear model,
@@ -1195,11 +1194,11 @@ with successive iterations of the training process.
   - Stepwise regression consistently yielded around 27 variables, but two or
     three of the selected variables would typically change between iterations.
 
-After the process was tuned, a handful of repetitions of the stepwise selection
-were performed, with a log generated for each repetition.  One of the
-repetitions gave a somewhat lower variance inflation factor than the others, and
-the variables selected in this repetition were used as the starting point for
-lasso regression.
+After the process was tuned, a handful of repetitions of the stepwise
+selection were performed, with a log generated for each repetition.  One of
+the repetitions gave a somewhat lower variance inflation factor than the
+others, and the variables selected in this repetition were used as the
+starting point for lasso regression.
 
 ### Outcome {.tab-display .unnumbered}
 
@@ -1225,10 +1224,10 @@ select_lm <- FALSE
 if (select_lm) {
     # Note that if this code is executed as a single block, some of the output
     # that should be captured by the sink() command does not get captured.  In
-    # practice, this code was executed interactively during an iterative process
-    # of model development.  When commands are executed interactively while
-    # waiting for one command to complete before executing the next, all output
-    # is captured by the sink() command.
+    # practice, this code was executed interactively during an iterative
+    # process of model development.  When commands are executed interactively
+    # while waiting for one command to complete before executing the next, all
+    # output is captured by the sink() command.
 
     # Because of the select command below, lm_train_data has no missing
     # values.
@@ -1305,8 +1304,8 @@ inflation factors for the model.
 After the feature selection was finalized, the cross validation was performed
 again to find the optimal regularization.
 
-  - During a handful of iterations of the training process, the optimal value of
-    lambda was consistently 0.0007.
+  - During a handful of iterations of the training process, the optimal value
+    of lambda was consistently 0.0007.
 
 ### Outcome {.tab-display .unnumbered}
 
@@ -1649,9 +1648,9 @@ Feature engineering for Condition1 and Condition2:
     visualization of Condition1, it is clear that some of these conditions are
     more important than others.  It is possible that for some houses with two
     conditions, the information available in Condition1 may be less important
-    than the information in Condition2.  The model might be improved by defining
-    a predictor that assigns a single condition to each house, choosing the most
-    important when two conditions are present.
+    than the information in Condition2.  The model might be improved by
+    defining a predictor that assigns a single condition to each house,
+    choosing the most important when two conditions are present.
 
 Research to understand important variables.  Examples:
 
@@ -1669,9 +1668,9 @@ Research to understand important variables.  Examples:
 Better handling of outliers:
 
   - Even with three outliers excluded, the training data has a significant
-    number of observations with large residuals, and these may be distorting the
-    model predictions.  Using a loss function such as the Huber loss that is
-    robust to large residuals might give a better model by minimizing such
+    number of observations with large residuals, and these may be distorting
+    the model predictions.  Using a loss function such as the Huber loss that
+    is robust to large residuals might give a better model by minimizing such
     distortions.
 
 Better handling of dummy variables defined during feature engineering:
@@ -1680,10 +1679,10 @@ Better handling of dummy variables defined during feature engineering:
     subtracting individual variables.  This process ignores they way in which
     combinations of two variables improve the model, e.g., NoGarage and
     GarageArea.  Dummy variables such as NoGarage were defined specifically to
-    improve the fit for related numerical variables, but the stepwise regression
-    used for feature selection was "unaware" of this aspect of the dummy
-    variables.  This might be corrected by exploring different starting models
-    for the stepwise regression.
+    improve the fit for related numerical variables, but the stepwise
+    regression used for feature selection was "unaware" of this aspect of the
+    dummy variables.  This might be corrected by exploring different starting
+    models for the stepwise regression.
 
 ## Qualitative model {.tabset}
 
